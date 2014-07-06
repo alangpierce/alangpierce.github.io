@@ -3,6 +3,7 @@ layout: post
 title: "BigBingo: Khan Academy's new BigQuery-backed A/B Testing Framework"
 date: 2014-07-07 12:00:00 -0700
 comments: true
+published: false
 categories: 
 ---
 
@@ -189,7 +190,7 @@ externalization of an internal Google service called
 you to import giant datasets and run nearly-arbitrary SQL queries on them.
 Unlike MapReduce-based SQL engines like Hive, BigQuery is fast: you're
 borrowing thousands of machines from Google for just the duration of your
-query, and all work is done in memory, so queries tend to finish in just a few
+query, and all work is done in-memory, so queries tend to finish in just a few
 seconds. The primary use case for BigQuery is for human users to manually dig
 into data, but I'll show how it can also be used to build stateful data
 pipelines.
@@ -228,19 +229,19 @@ the size of your tables. By designing the table schemas with space-efficiency
 in mind, I was able to reduce BigBingo's data usage from 1TB ($5 per query) to
 50GB (25 cents per query). (I'll go over the details in a future blog post.)
 
-There are also some huge dev usability advantages to using BigQuery over
+There are also some huge usability advantages to using BigQuery over
 another batch processing system like MapReduce:
 
 * When I was designing the queries and schema, I could try things out on real
-production data from within the BigQuery web UI, and get results back in
+production data from within the BigQuery web UI and get results back in
 seconds. This meant that I could work through almost all architectural details
 before having to write a line of Python code.
-* One I did start to write code, I could run the full job completely from my
+* Once I did start to write code, I could run the full job completely from my
 laptop, with no need to push code out to servers in order to iterate. Whenever
 a query had a problem, it showed up in the "Query History" section of the
 BigQuery web UI, and I could easily debug it there.
-* Sanity-checking the intermediate steps and tracking data issues was easy
-because everything was accessible through SQL.
+* Sanity-checking the intermediate steps and hunting down problems in the data
+was easy because everything was immediately accessible through SQL.
 
 ### Taking advantage of immutable storage
 
@@ -249,8 +250,9 @@ restriction that I just had to live with, but as soon as I started thinking
 about making the system robust, immutability was a huge benefit. When thinking
 through the details, I discovered some important lessons:
 
-* **Make every query idempotent. Never append to the end of a table!**
-* **Table names should describe their exact contents, including a timestamp.**
+* **Never append to the end of a table. Keep tables immutable and queries
+idempotent.**
+* **A table's name should exactly define its contents.**
 
 This is probably best explained by looking at a simple data pipeline similar to
 BigBingo. First, I'll give a straightforward but fragile approach, then show
@@ -275,7 +277,7 @@ SELECT
     SUM(event = "hint_taken") AS hint_taken_count,
 FROM logs_2014_07_01
 WHERE time >= 1404194400 AND time < 1404198000
-GROUP EACH BY user_id
+GROUP EACH BY user_id  -- GROUP EACH BY is just a large-scale GROUP BY
 ```
 
 **Step 2:** Combine `new_event_totals` with the previous `full_event_totals`
@@ -318,11 +320,10 @@ next job runs, the event_totals table will lose all events from that hour.
 * If the logs weren't successfully loaded into BigQuery, Step 1 will think that
 nothing happend in that hour and will silently compute the wrong results.
 
-All of these problems can be solved by keeping the same queries, but naming
-tables after their exact contents, including the time that they apply to. The
-background job then takes a particular hour to process, rather than trying to
-figure out what the "latest" hour is. Here's what it would do if you run it
-with the hour from 6:00 to 7:00 on July 1:
+To solve all of these problems, just **include a timestamp in each table's
+name**. The background job then takes as a parameter the particular hour to
+process, rather than trying to figure out what the "latest" hour is. Here's
+what it would do if you run it with the hour from 6:00 to 7:00 on July 1:
 
 **Step 1:** Read from `logs_2014_07_01_06` (the logs for 6:00 to 7:00 on July
 1) and write to the table `new_event_totals_logs_2014_07_01_06` (the new events
@@ -348,10 +349,10 @@ with the same strategy of keeping all old tables, and this strategy has helped
 tremendously and kept BigBingo's data consistent in the face of all sorts of
 errors:
 
-* Various errors (connection timeouts, internal BigQuery errors, etc.) have
-caused the whole BigBingo job to occasionally fail, and in these cases, it's
-*always* safe to just retry the job.
-* The LogToBigQuery process has sometimes failed and sometimes taken too long
+* Various transient errors (connection timeouts, internal BigQuery errors,
+etc.) have caused the whole BigBingo job to occasionally fail, and in these
+cases, it's *always* safe to just retry the job.
+* The log import process has sometimes failed and sometimes taken too long
 to run, and in both situations, BigBingo automatically fails (and sends an
 email reporting the failure) because the data it depends on isn't ready yet.
 * Whenever BigBingo fails, all future BigBingo jobs fail (rather than computing
@@ -376,15 +377,16 @@ things.
 Where's the source code?
 -----
 
-[Here's a Gist with pretty much all of the code](https://gist.github.com/alangpierce/f0ad63643b446a4f84ad)
-(at the time of this blog post). I put an MIT license on it, so feel free to
-base work off of it or use any of the self-contained pieces.
-
 Ideally, BigBingo would be a self-contained open-source library, but it
 currently has enough dependencies on internal KA infrastructure that it's both
 hard to make general and would be a bit difficult to use in isolation anyway.
 
-That said, Khan Academy has
+That said, there's no reason I can't share the code, so
+[here's a Gist with pretty much all of the code](https://gist.github.com/alangpierce/f0ad63643b446a4f84ad)
+(at the time of this blog post). I put an MIT license on it, so feel free to
+base work off of it or use any of the self-contained pieces.
+
+Khan Academy has
 [lots of open-source projects](https://github.com/Khan), and it's not out of
 the question for BigBingo to be made truly open source in the future, so let me
 know in the comments if you think you would use it.
