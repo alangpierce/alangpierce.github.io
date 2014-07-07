@@ -71,12 +71,16 @@ focus our money on improving education, not upkeep.
 A/B testing at Khan Academy
 -----
 
-A/B testing isn't just some occasional tool at Khan Academy; it's an important part
-of our engineering culture, and almost any change that we care about goes
-through an A/B test first, often multiple A/B tests. Right now, there are 57 A/B
-tests actively running, which is an average of about two active A/B tests per
-developer.
+A/B testing isn't just some occasional tool at Khan Academy; it's an important
+part of our engineering culture, and almost any change that we care about goes
+through an A/B test first, often multiple A/B tests. Right now, there are 57
+A/B tests actively running, which is an average of about two active A/B tests
+per developer.
 
+Unlike "traditional" A/B testing (which tends to maximize simple metrics like
+ad clicks, purchases, etc.), Khan Academy's A/B testing tries to maximize
+student *learning*. That means that we try out much more advanced changes than
+just little UI tweaks, and measuring success is a huge challenge by itself.
 Here are some examples of A/B tests we do:
 
 * We have a [sophisticated system](http://mattfaus.com/2014/07/khan-academy-mastery-mechanics/)
@@ -126,8 +130,8 @@ Keeping the raw data also makes it easy to do more advanced analysis
 after-the-fact:
 
 * Instead of just using the mean number of conversions, you can look at more
-interesting statistics like the median, percentiles, and standard deviation, and
-you take ignore outliers.
+interesting statistics like the median, percentiles, and standard deviation,
+and you can ignore outliers.
 * You can cross-reference A/B test participation with more sophisticated
 metrics, like the
 [learning gain](https://sites.google.com/a/khanacademy.org/forge/khan-academy-data-science-public-documentation/learning-gain)
