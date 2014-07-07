@@ -2,10 +2,10 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
 
   <title><![CDATA[Alan Pierce]]></title>
-  <link href="http://alangpierce.github.io/atom.xml" rel="self"/>
-  <link href="http://alangpierce.github.io/"/>
-  <updated>2014-07-07T15:19:39-07:00</updated>
-  <id>http://alangpierce.github.io/</id>
+  <link href="http://www.alangpierce.com/atom.xml" rel="self"/>
+  <link href="http://www.alangpierce.com/"/>
+  <updated>2014-07-07T15:29:04-07:00</updated>
+  <id>http://www.alangpierce.com/</id>
   <author>
     <name><![CDATA[Alan Pierce]]></name>
     
@@ -15,9 +15,9 @@
   
   <entry>
     <title type="html"><![CDATA[BigBingo: Khan Academy's New BigQuery-backed A/B Testing Framework]]></title>
-    <link href="http://alangpierce.github.io/blog/2014/07/07/bigbingo-khan-academys-new-bigquery-backed-a-b-testing-framework/"/>
+    <link href="http://www.alangpierce.com/blog/2014/07/07/bigbingo-khan-academys-new-bigquery-backed-a-b-testing-framework/"/>
     <updated>2014-07-07T12:00:00-07:00</updated>
-    <id>http://alangpierce.github.io/blog/2014/07/07/bigbingo-khan-academys-new-bigquery-backed-a-b-testing-framework</id>
+    <id>http://www.alangpierce.com/blog/2014/07/07/bigbingo-khan-academys-new-bigquery-backed-a-b-testing-framework</id>
     <content type="html"><![CDATA[<p>In late January, I joined Khan Academy as the third member of the
 infrastructure team. We were just starting a big performance push, so I spent my
 first week or two improving our
@@ -61,15 +61,15 @@ results, but I&rsquo;ll let the pictures do the talking:</p>
 
 <p>The logged-in homepage got twice as fast:</p>
 
-<p><img src="http://alangpierce.github.io/images/logged_in_homepage.png" alt="Logged-in homepage percentiles" /></p>
+<p><img src="http://www.alangpierce.com/images/logged_in_homepage.png" alt="Logged-in homepage percentiles" /></p>
 
 <p>The logged-out homepage improved even more:</p>
 
-<p><img src="http://alangpierce.github.io/images/logged_out_homepage.png" alt="Logged-out homepage percentiles" /></p>
+<p><img src="http://www.alangpierce.com/images/logged_out_homepage.png" alt="Logged-out homepage percentiles" /></p>
 
 <p>And our memcache went from &ldquo;worryingly overloaded&rdquo; to &ldquo;doing great&rdquo;:</p>
 
-<p><img src="http://alangpierce.github.io/images/memcache_usage.png" alt="Memcache compute units" /></p>
+<p><img src="http://www.alangpierce.com/images/memcache_usage.png" alt="Memcache compute units" /></p>
 
 <p>Of course, making the site faster makes users happier, but it has another big
 benefit: cost savings. If requests can be processed twice as fast, we only need
@@ -126,7 +126,7 @@ BigBingo diverges from GAE/Bingo in a few important ways.</p>
 experiment (I added a red box to indicate the &ldquo;real&rdquo; data; everything else is derived
 from those numbers):</p>
 
-<p><img src="http://alangpierce.github.io/images/gae_bingo.png" alt="GAE/Bingo Dashboard" /></p>
+<p><img src="http://www.alangpierce.com/images/gae_bingo.png" alt="GAE/Bingo Dashboard" /></p>
 
 <p>For clear-cut results, a few numbers will do just fine, but what do you do when
 the results are unexpected or completely nonsensical? In GAE/Bingo, the best
@@ -181,7 +181,7 @@ race conditions in GAE/Bingo that weren&rsquo;t known yet.</li>
 
 <p>Here&rsquo;s a big-picture overview of what BigBingo looks like:</p>
 
-<p><img src="http://alangpierce.github.io/images/architecture.png" alt="The architecture" /></p>
+<p><img src="http://www.alangpierce.com/images/architecture.png" alt="The architecture" /></p>
 
 <p>Here&rsquo;s how the data flows from a user-facing request to BigQuery, then to the
 dashboard UI:</p>
