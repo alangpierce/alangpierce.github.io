@@ -160,20 +160,22 @@ Here's a big-picture overview of what BigBingo looks like:
 
 ![The architecture](/images/architecture.png)
 
-* When a user enters into an A/B test, that event is recorded through a log
-statement. The user's alternative is chosen as a deterministic function of the
-user ID and the experiment name, and the configuration for all experiments is
-just a Python file in the code, so there's no need to make any RPCs for this
-operation.
-* When a user triggers a conversion event, it is recorded through a log
+Here's how the data flows from a user-facing request to BigQuery, then to the
+dashboard UI:
+
+1. When a user enters into an A/B test, that event is recorded through a log
+statement. The user's alternative is chosen through a deterministic function
+similar to `hash(experiment_name + user_id) % num_alternatives`, so no RPCs are
+necessary to coordinate that information.
+2. When a user triggers a conversion event, it is recorded through a log
 statement.
-* In the hourly LogToBigQuery log export process, the raw log events (called
+3. In the hourly LogToBigQuery log export process, the raw log events (called
 "bingo events") are parsed and extracted into custom BigQuery columns to be
 included in the normal request logs tables.
-* Every two hours, the BigBingo Summarize task runs and processes the new logs
+4. Every two hours, the BigBingo Summarize task runs and processes the new logs
 to compute the latest A/B test numbers. That data is then cleaned up and copied
 to a "publish" dataset.
-* The BigBingo dashboard, a web UI, queries these results to disply all data
+5. The BigBingo dashboard, a web UI, queries these results to disply all data
 about a given experiment:
 
 ![BigBingo dashboard](/images/dashboard.png)
@@ -188,7 +190,7 @@ If you're not familiar with BigQuery, it's a hosted Google service (really an
 externalization of an internal Google service called 
 [Dremel](http://research.google.com/pubs/pub36632.html)) that allows
 you to import giant datasets and run nearly-arbitrary SQL queries on them.
-Unlike MapReduce-based SQL engines like Hive, BigQuery is fast: you're
+BigQuery is way faster than MapReduce-based SQL engines like Hive: you're
 borrowing thousands of machines from Google for just the duration of your
 query, and all work is done in-memory, so queries tend to finish in just a few
 seconds. The primary use case for BigQuery is for human users to manually dig
@@ -224,10 +226,12 @@ values.**
 
 It certainly feels like an architectural sin to rebuild all of your data over
 and over, but it's not as unreasonable as you might think. BigQuery is quite
-cost-efficient, and there are lots of little tricks you can do to reduce
-the size of your tables. By designing the table schemas with space-efficiency
-in mind, I was able to reduce BigBingo's data usage from 1TB ($5 per query) to
-50GB (25 cents per query). (I'll go over the details in a future blog post.)
+cost-efficient (some rough numbers suggest that it's more than 10x as
+cost-efficient as MapReduce running on App Engine), and there are lots of
+little tricks you can do to reduce the size of your tables. By designing the
+table schemas with space-efficiency in mind, I was able to reduce BigBingo's
+data usage from 1TB ($5 per query) to 50GB (25 cents per query). (I'll go over
+the details in a future blog post.)
 
 There are also some huge usability advantages to using BigQuery over
 another batch processing system like MapReduce:
@@ -256,7 +260,7 @@ idempotent.**
 
 This is probably best explained by looking at a simple data pipeline similar to
 BigBingo. First, I'll give a straightforward but fragile approach, then show
-how it can be improved to take advantage of immutability.
+how it can be improved to take advantage of BigQuery's architecture.
 
 **Goal:** Keep track of the median number of problems solved, problems
 attempted, and hints taken across all users.
@@ -341,8 +345,8 @@ tables to generate that hour's tables. Making three new tables per hour may
 seem wasteful, but it's actually **just as easy and cheap as the previous
 scheme**. The main problem is that the tables will just accumulate over time,
 so you'll rack up storage costs. Fortunately, BigQuery makes it easy to give an
-expiration time to tables, so you can easily delete them after a week (or
-however long you want to keep them).
+expiration time to tables, so you can set them to be automatically deleted
+after a week (or however long you want to keep them).
 
 The core BigBingo job has 7 queries/tables instead of 3, but it is designed
 with the same strategy of keeping all old tables, and this strategy has helped
