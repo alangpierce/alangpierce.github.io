@@ -321,8 +321,8 @@ called `latest_medians`:
 -- Results are written to latest_medians.
 SELECT
     NTH(50, QUANTILES(problem_correct_count, 100)) AS median_problems_correct,
-    NTH(50, QUANTILES(problem_correct_count, 100)) AS median_problems_attempt,
-    NTH(50, QUANTILES(problem_correct_count, 100)) AS median_hints_taken,
+    NTH(50, QUANTILES(problem_attempt_count, 100)) AS median_problems_attempted,
+    NTH(50, QUANTILES(hint_taken_count, 100)) AS median_hints_taken,
 FROM full_event_totals
 ```
 
