@@ -4,7 +4,7 @@
   <title><![CDATA[Alan Pierce]]></title>
   <link href="http://www.alangpierce.com/atom.xml" rel="self"/>
   <link href="http://www.alangpierce.com/"/>
-  <updated>2014-07-07T15:29:04-07:00</updated>
+  <updated>2014-07-07T16:37:15-07:00</updated>
   <id>http://www.alangpierce.com/</id>
   <author>
     <name><![CDATA[Alan Pierce]]></name>
@@ -405,8 +405,8 @@ called <code>latest_medians</code>:</p>
 </pre></td><td class='code'><pre><code class='sql'><span class='line'><span class="c1">-- Results are written to latest_medians.</span>
 </span><span class='line'><span class="k">SELECT</span>
 </span><span class='line'>    <span class="n">NTH</span><span class="p">(</span><span class="mi">50</span><span class="p">,</span> <span class="n">QUANTILES</span><span class="p">(</span><span class="n">problem_correct_count</span><span class="p">,</span> <span class="mi">100</span><span class="p">))</span> <span class="k">AS</span> <span class="n">median_problems_correct</span><span class="p">,</span>
-</span><span class='line'>    <span class="n">NTH</span><span class="p">(</span><span class="mi">50</span><span class="p">,</span> <span class="n">QUANTILES</span><span class="p">(</span><span class="n">problem_correct_count</span><span class="p">,</span> <span class="mi">100</span><span class="p">))</span> <span class="k">AS</span> <span class="n">median_problems_attempt</span><span class="p">,</span>
-</span><span class='line'>    <span class="n">NTH</span><span class="p">(</span><span class="mi">50</span><span class="p">,</span> <span class="n">QUANTILES</span><span class="p">(</span><span class="n">problem_correct_count</span><span class="p">,</span> <span class="mi">100</span><span class="p">))</span> <span class="k">AS</span> <span class="n">median_hints_taken</span><span class="p">,</span>
+</span><span class='line'>    <span class="n">NTH</span><span class="p">(</span><span class="mi">50</span><span class="p">,</span> <span class="n">QUANTILES</span><span class="p">(</span><span class="n">problem_attempt_count</span><span class="p">,</span> <span class="mi">100</span><span class="p">))</span> <span class="k">AS</span> <span class="n">median_problems_attempted</span><span class="p">,</span>
+</span><span class='line'>    <span class="n">NTH</span><span class="p">(</span><span class="mi">50</span><span class="p">,</span> <span class="n">QUANTILES</span><span class="p">(</span><span class="n">hint_taken_count</span><span class="p">,</span> <span class="mi">100</span><span class="p">))</span> <span class="k">AS</span> <span class="n">median_hints_taken</span><span class="p">,</span>
 </span><span class='line'><span class="k">FROM</span> <span class="n">full_event_totals</span>
 </span></code></pre></td></tr></table></div></figure>
 
