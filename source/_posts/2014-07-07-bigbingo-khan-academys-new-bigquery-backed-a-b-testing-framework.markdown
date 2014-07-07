@@ -20,7 +20,7 @@ and rewrite the whole A/B testing system from scratch. I had plenty of
 sources of guidance and advice, but I, the new guy, was to be the sole owner and author of the
 new system. I was up for the task, but it was nevertheless a bit daunting.
 
-Instead of the old strategy of keeping the experiment data continuously
+Instead of the old strategy of keeping the A/B test data continuously
 up-to-date using memcache (and periodically flushing to the App Engine
 datastore), the new system would report events by simply logging
 them, and those log statements would eventually make their way into
@@ -39,7 +39,7 @@ we think about A/B testing, and some specific points of the design and
 architecture of BigBingo. There are some additional cool details that are probably
 deserving of their own blog post, so look out for those in the future.
 
-BigBingo is Fast!
+BigBingo is fast!
 -----
 Most developers at Khan Academy had a sense that the old GAE/Bingo system was slow and BigBingo
 would improve overall performance, but I doubt anybody expected that the
@@ -68,7 +68,7 @@ bill drops significantly. Since Khan Academy is a nonprofit running off of
 donations, it's important to us to have an efficient infrastructure so we can
 focus our money on improving education, not upkeep.
 
-A/B Testing at Khan Academy
+A/B testing at Khan Academy
 -----
 
 A/B testing isn't just some occasional tool at Khan Academy; it's an important part
@@ -77,25 +77,28 @@ through an A/B test first, often multiple A/B tests. Right now, there are 57 A/B
 tests actively running, which is an average of about two active A/B tests per
 developer.
 
-Here are some examples of A/B tests we've run recently:
+Here are some examples of A/B tests we do:
 
-* We tried out a new algorithm to detect when users are below their learning
-edge and advance them through our system faster, and ran the new algorithm on
-half of all users for about a month. Learners under the new system progressed
-further, as expected, and they almost always stayed at their advanced level
-rather than being demoted, so we kept the new algorithm.
+* We have a [sophisticated system](http://mattfaus.com/2014/07/khan-academy-mastery-mechanics/)
+that tries to understand a student's knowledge level and recommend the best
+exercises for them, and we're always making little improvements to it. For
+example, we recently tried out a new system to detect when users are below
+their learning edge and advance them through the material more quickly.
+Learners under the new system progressed further, as expected, and they almost
+always stayed at their advanced level rather than being demoted, so we rolled
+out the new algorithm to all users.
 * We've been experimenting with providing message snippets to teach our users
 that learning makes them not just more knowledgeable, but smarter
 as well. This specific motivational approach turns out to be surprisingly
 effective, and results in increased site usage and learning outcomes, so we're
 trying out various different approaches to deliver the message in the most
 effective way.
-* We switched the homepage background to one we liked better. It didn't improve any
+* We recently switched the homepage background to one we liked better. It didn't improve any
 metrics noticeably, but the A/B test verified that it didn't hurt anything
 either, so we kept the new background. We run lots of little experiments like this one.
 
 
-What's different about BigBingo
+What's different about BigBingo?
 -----
 
 In the years since GAE/Bingo was written, the devs at KA learned
@@ -126,8 +129,9 @@ after-the-fact:
 interesting statistics like the median, percentiles, and standard deviation, and
 you take ignore outliers.
 * You can cross-reference A/B test participation with more sophisticated
-metrics, like the "learning gain" metric that the data science team is working
-on.
+metrics, like the
+[learning gain](https://sites.google.com/a/khanacademy.org/forge/khan-academy-data-science-public-documentation/learning-gain)
+metric that the data science team is working on.
 * You can segment your analysis based on any property you can come up with. For
 example, you might want to focus on only new users or only long-term users.
 
@@ -173,12 +177,19 @@ statement.
 "bingo events") are parsed and extracted into custom BigQuery columns to be
 included in the normal request logs tables.
 4. Every two hours, the BigBingo Summarize task runs and processes the new logs
-to compute the latest A/B test numbers. That data is then cleaned up and copied
-to a "publish" dataset.
-5. The BigBingo dashboard, a web UI, queries these results to disply all data
-about a given experiment:
-
-![BigBingo dashboard](/images/dashboard.png)
+to compute the latest A/B test numbers, following a few rules:
+    * If a user participates multiple times in an A/B test (which is common),
+    only the earliest event counts.
+    * A conversion event only counts for an experiment if the event happened
+    after the user first participated in the experiment.
+    * For each conversion, BigBingo computes both the total number of times the
+    conversion was triggered and the total number of distinct users that
+    triggered the conversion.
+5. The latest data is cleaned up and copied to a "publish" dataset where it can
+be conveniently accessed.
+6. The BigBingo dashboard, a web UI, queries these results to disply all data
+about a given experiment: the historical participant and conversion numbers, as
+well as p-values for each alternative.
 
 Most of the details are reasonably straightforward, but I'll dig into what's
 probably the most controversial aspect of this architecture: the decision to
@@ -363,7 +374,7 @@ email reporting the failure) because the data it depends on isn't ready yet.
 incorrect data) until the data is caught up.
 * Sometimes two instances of the job end up running at the same time. Since the
 intermediate data is all timestamped, this doesn't cause any problems.
-* One time, when retrying the job, I accidentally gave an incorrect UNIX
+* One time, when retrying a failed job, I accidentally gave an incorrect UNIX
 timestamp. The wrong hour was processed, but it didn't hurt data integrity at
 all.
 * In one or two cases, bugs have made the data actually incorrect for a while.
