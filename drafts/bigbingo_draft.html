@@ -265,12 +265,14 @@ race conditions in GAE/Bingo that weren&rsquo;t known yet.</li>
 
 <p><img src="/images/architecture.png" alt="The architecture" /></p>
 
-<ul>
+<p>Here&rsquo;s how the data flows from a user-facing request to BigQuery, then to the
+dashboard UI:</p>
+
+<ol>
 <li>When a user enters into an A/B test, that event is recorded through a log
-statement. The user&rsquo;s alternative is chosen as a deterministic function of the
-user ID and the experiment name, and the configuration for all experiments is
-just a Python file in the code, so there&rsquo;s no need to make any RPCs for this
-operation.</li>
+statement. The user&rsquo;s alternative is chosen through a deterministic function
+similar to <code>hash(experiment_name + user_id) % num_alternatives</code>, so no RPCs are
+necessary to coordinate that information.</li>
 <li>When a user triggers a conversion event, it is recorded through a log
 statement.</li>
 <li>In the hourly LogToBigQuery log export process, the raw log events (called
@@ -281,7 +283,7 @@ to compute the latest A/B test numbers. That data is then cleaned up and copied
 to a &ldquo;publish&rdquo; dataset.</li>
 <li>The BigBingo dashboard, a web UI, queries these results to disply all data
 about a given experiment:</li>
-</ul>
+</ol>
 
 
 <p><img src="/images/dashboard.png" alt="BigBingo dashboard" /></p>
@@ -296,7 +298,7 @@ use Google BigQuery for all storage and processing.</p>
 externalization of an internal Google service called
 <a href="http://research.google.com/pubs/pub36632.html">Dremel</a>) that allows
 you to import giant datasets and run nearly-arbitrary SQL queries on them.
-Unlike MapReduce-based SQL engines like Hive, BigQuery is fast: you&rsquo;re
+BigQuery is way faster than MapReduce-based SQL engines like Hive: you&rsquo;re
 borrowing thousands of machines from Google for just the duration of your
 query, and all work is done in-memory, so queries tend to finish in just a few
 seconds. The primary use case for BigQuery is for human users to manually dig
@@ -364,10 +366,12 @@ values.</strong></p>
 
 <p>It certainly feels like an architectural sin to rebuild all of your data over
 and over, but it&rsquo;s not as unreasonable as you might think. BigQuery is quite
-cost-efficient, and there are lots of little tricks you can do to reduce
-the size of your tables. By designing the table schemas with space-efficiency
-in mind, I was able to reduce BigBingo&rsquo;s data usage from 1TB ($5 per query) to
-50GB (25 cents per query). (I&rsquo;ll go over the details in a future blog post.)</p>
+cost-efficient (some rough numbers suggest that it&rsquo;s more than 10x as
+cost-efficient as MapReduce running on App Engine), and there are lots of
+little tricks you can do to reduce the size of your tables. By designing the
+table schemas with space-efficiency in mind, I was able to reduce BigBingo&rsquo;s
+data usage from 1TB ($5 per query) to 50GB (25 cents per query). (I&rsquo;ll go over
+the details in a future blog post.)</p>
 
 <p>There are also some huge usability advantages to using BigQuery over
 another batch processing system like MapReduce:</p>
@@ -402,7 +406,7 @@ idempotent.</strong></li>
 
 <p>This is probably best explained by looking at a simple data pipeline similar to
 BigBingo. First, I&rsquo;ll give a straightforward but fragile approach, then show
-how it can be improved to take advantage of immutability.</p>
+how it can be improved to take advantage of BigQuery&rsquo;s architecture.</p>
 
 <p><strong>Goal:</strong> Keep track of the median number of problems solved, problems
 attempted, and hints taken across all users.</p>
@@ -515,8 +519,8 @@ tables to generate that hour&rsquo;s tables. Making three new tables per hour ma
 seem wasteful, but it&rsquo;s actually <strong>just as easy and cheap as the previous
 scheme</strong>. The main problem is that the tables will just accumulate over time,
 so you&rsquo;ll rack up storage costs. Fortunately, BigQuery makes it easy to give an
-expiration time to tables, so you can easily delete them after a week (or
-however long you want to keep them).</p>
+expiration time to tables, so you can set them to be automatically deleted
+after a week (or however long you want to keep them).</p>
 
 <p>The core BigBingo job has 7 queries/tables instead of 3, but it is designed
 with the same strategy of keeping all old tables, and this strategy has helped
