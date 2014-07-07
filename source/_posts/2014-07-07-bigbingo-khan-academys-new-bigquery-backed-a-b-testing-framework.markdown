@@ -3,7 +3,7 @@ layout: post
 title: "BigBingo: Khan Academy's new BigQuery-backed A/B Testing Framework"
 date: 2014-07-07 12:00:00 -0700
 comments: true
-published: false
+published: true
 categories: 
 ---
 
