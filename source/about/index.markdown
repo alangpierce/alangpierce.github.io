@@ -20,6 +20,7 @@ although I probably won't ever travel that far into theory land ever again.
 
 I also wrote [theproofistrivial.com](http://www.theproofistrivial.com).
 
-Here's my [GitHub](https://github.com/alangpierce).
+I'm also on [GitHub](https://github.com/alangpierce) and
+[Twitter](https://twitter.com/alangpierce).
 
-My email is this domain name (and my GitHub username) @gmail.com.
+My email is this domain name (and my GitHub/Twitter username) @gmail.com.
