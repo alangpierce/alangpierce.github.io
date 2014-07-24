@@ -22,5 +22,3 @@ I also wrote [theproofistrivial.com](http://www.theproofistrivial.com).
 
 I'm also on [GitHub](https://github.com/alangpierce) and
 [Twitter](https://twitter.com/alangpierce).
-
-My email is this domain name (and my GitHub/Twitter username) @gmail.com.
