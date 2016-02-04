@@ -6,9 +6,8 @@ sharing: false
 footer: true
 ---
 
-I'm a software engineer at [Khan Academy](http://www.khanacademy.org). I work on
-the infrastructure team, which mostly focuses on site performance and developer
-happiness.
+At Khan Academy I worked on the infrastructure team, which mostly focuses on
+site performance and developer happiness.
 
 Before that, I worked at Palantir from May 2011 to January 2014, where I worked
 on improving scale and avoiding downtime. I also had internships at Mozilla and
