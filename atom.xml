@@ -4,7 +4,7 @@
   <title><![CDATA[Alan Pierce]]></title>
   <link href="http://www.alangpierce.com/atom.xml" rel="self"/>
   <link href="http://www.alangpierce.com/"/>
-  <updated>2014-07-24T09:50:48-07:00</updated>
+  <updated>2016-02-03T20:47:57-08:00</updated>
   <id>http://www.alangpierce.com/</id>
   <author>
     <name><![CDATA[Alan Pierce]]></name>
@@ -238,46 +238,14 @@ pipelines.</p>
 anything close to a relational database! It has a small set of primitives that&rsquo;s
 different from anything I&rsquo;ve worked with before:</p>
 
-<table>
-<thead>
-<tr>
-<th></th>
-<th> Operation </th>
-<th> Price </th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td></td>
-<td> Import CSV/JSON data into a table </td>
-<td> Free</td>
-</tr>
-<tr>
-<td></td>
-<td> Run a SELECT query </td>
-<td> 0.5 cents per GB in all columns touched</td>
-</tr>
-<tr>
-<td></td>
-<td> Store a query result as a new table </td>
-<td> Free</td>
-</tr>
-<tr>
-<td></td>
-<td> Apppend query results to the end of a table </td>
-<td> Free</td>
-</tr>
-<tr>
-<td></td>
-<td> Copy a table </td>
-<td> Free</td>
-</tr>
-</tbody>
-</table>
-
-
-<br />
-
+<p>| Operation | Price |
+| &mdash;&mdash;&mdash; | &mdash;&ndash; |
+| Import CSV/JSON data into a table | Free
+| Run a SELECT query | 0.5 cents per GB in all columns touched
+| Store a query result as a new table | Free
+| Apppend query results to the end of a table | Free
+| Copy a table | Free
+<br /></p>
 
 <p>There are
 <a href="https://developers.google.com/bigquery/docs/reference/v2/">a few more operations</a>
