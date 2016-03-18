@@ -4,7 +4,7 @@
   <title><![CDATA[Alan Pierce]]></title>
   <link href="http://www.alangpierce.com/atom.xml" rel="self"/>
   <link href="http://www.alangpierce.com/"/>
-  <updated>2016-03-17T18:45:04-07:00</updated>
+  <updated>2016-03-17T19:15:00-07:00</updated>
   <id>http://www.alangpierce.com/</id>
   <author>
     <name><![CDATA[Alan Pierce]]></name>
@@ -719,10 +719,9 @@ some structs to make it easy to swap out its code pointer with the real
 <figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
 <span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class='go'><span class='line'><span class="nx">unexpected</span> <span class="nx">fault</span> <span class="nx">address</span> <span class="mh">0x129e80</span>
-</span><span class='line'><span class="nx">fatal</span> <span class="kt">error</span><span class="p">:</span> <span class="nx">fault</span>
-</span><span class='line'><span class="p">[</span><span class="nx">signal</span> <span class="mh">0xa</span> <span class="nx">code</span><span class="p">=</span><span class="mh">0x2</span> <span class="nx">addr</span><span class="p">=</span><span class="mh">0x129e80</span> <span class="nx">pc</span><span class="p">=</span><span class="mh">0x20be</span><span class="p">]</span>
-</span></code></pre></td></tr></table></div></figure>
+</pre></td><td class='code'><pre><code class=''><span class='line'>unexpected fault address 0x129e80
+</span><span class='line'>fatal error: fault
+</span><span class='line'>[signal 0xa code=0x2 addr=0x129e80 pc=0x20be]</span></code></pre></td></tr></table></div></figure>
 
 
 <p>After some experimenting, I discovered that the crash was happening <em>even
