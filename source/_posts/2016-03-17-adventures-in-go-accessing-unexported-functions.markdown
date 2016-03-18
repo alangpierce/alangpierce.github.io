@@ -682,7 +682,8 @@ approach will sometimes completely break due to function inlining.
 Go is certainly in an interesting place in the space of languages. It's dynamic
 enough that it's not crazy to look up a function by name, but it's much more
 performance-focused than, say, Java. The reflection capabilities are good for a
-systems language, but sometimes the better escape hatch is to just use pointers.
+systems language, but sometimes the better escape hatch is to just use
+`unsafe.Pointer`.
 
 I'd be happy to hear any feedback or corrections in the comments below. Like I
 mentioned, I'm still learning all of this stuff, so I probably overlooked some

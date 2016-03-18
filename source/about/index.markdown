@@ -7,9 +7,9 @@ footer: true
 ---
 
 I'm a developer with a wide range of interests: CS theory, math, compilers,
-distributed systems, software engineering, and lots of other things. I'm
-typically a "backend" person in one way or another, although I've also done a
-fair amount of UI work.
+distributed systems, software engineering, Android, React, and lots of other
+things. I'm typically a "backend" person in one way or another, although I've
+also done a fair amount of UI work.
 
 Previously, I was at Khan Academy, where I worked on the infrastructure team.
 Among other things, I worked on the A/B testing framework and the API, and
