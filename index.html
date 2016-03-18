@@ -9,8 +9,9 @@
   <meta name="author" content="Alan Pierce">
 
   
-  <meta name="description" content="In late January, I joined Khan Academy as the third member of the
-infrastructure team. We were just starting a big performance push, so I spent my &hellip;">
+  <meta name="description" content="I&rsquo;ve been learning the Go programming language in my favorite way: by writing a
+Go interpreter in Go. The source code so far is
+on GitHub, but &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -77,6 +78,910 @@ infrastructure team. We were just starting a big performance push, so I spent my
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2016/03/17/adventures-in-go-accessing-unexported-functions/">Adventures in Go: Accessing Unexported Functions</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2016-03-17T19:00:00-07:00'><span class='date'><span class='date-month'>Mar</span> <span class='date-day'>17</span><span class='date-suffix'>th</span>, <span class='date-year'>2016</span></span> <span class='time'>7:00 pm</span></time>
+        
+           | <a href="/blog/2016/03/17/adventures-in-go-accessing-unexported-functions/#disqus_thread"
+             data-disqus-identifier="http://www.alangpierce.com/blog/2016/03/17/adventures-in-go-accessing-unexported-functions/">Comments</a>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>I&rsquo;ve been learning the Go programming language in my favorite way: by writing a
+Go interpreter in Go. The source code so far is
+<a href="https://github.com/alangpierce/apgo">on GitHub</a>, but the point of this post is
+to tell the story of a particularly interesting challenge I ran into:
+programmatically accessing unexported (a.k.a. private) functions in other
+packages. In the process of figuring this out, I learned about lots of escape
+hatches and limitations of Go. The result of the adventure is a little library I
+made and put on GitHub called
+<a href="https://github.com/alangpierce/go-forceexport">go-forceexport</a>. If you want a
+TLDR, you can just read the source code, but hopefully you&rsquo;ll find the adventure
+interesting as well!</p>
+
+<p>My perspective in this post is someone who has plenty of experience with
+programming both low-level and high-level languages, but is new to the Go
+language and curious about its internals and how it compares to other languages.
+In both the exploration process and the process of writing this post, I learned
+quite a bit about the right way to think about Go. Hopefully by reading this
+you&rsquo;ll be able to learn some of those lessons and also share the same curiosity.</p>
+
+<h2>What are unexported functions are and why would I want to call one?</h2>
+
+<p>In Go, capitalization matters, and determines whether a name can be accessed
+from the outside world. For example:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class='go'><span class='line'><span class="kd">func</span> <span class="nx">thisFunctionIsUnexported</span><span class="p">()</span> <span class="p">{</span>
+</span><span class='line'>    <span class="nx">fmt</span><span class="p">.</span><span class="nx">Println</span><span class="p">(</span><span class="s">&quot;This function starts with a &#39;t&#39; and can only be called from this package.&quot;</span><span class="p">)</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="kd">func</span> <span class="nx">ThisFunctionIsExported</span><span class="p">()</span> <span class="p">{</span>
+</span><span class='line'>    <span class="nx">fmt</span><span class="p">.</span><span class="nx">Println</span><span class="p">(</span><span class="s">&quot;This function starts with a &#39;T&#39; and can be called from anywhere.&quot;</span><span class="p">)</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Other languages use the terms &ldquo;private&rdquo; and &ldquo;public&rdquo; for this distinction, but
+in Go, they&rsquo;re called <strong>unexported</strong> and <strong>exported</strong>.</p>
+
+<p>But what about when you just want to hack and explore, and you can&rsquo;t easily
+modify the code in question? In Python, you might see a name starting with an
+underscore, like <code>_this_function_is_private</code>, meaning that it&rsquo;s rude to call it
+from the outside world, but the runtime doesn&rsquo;t try to stop you. In Java, you
+can generally defeat the <code>private</code> keyword using reflection and the
+<a href="http://docs.oracle.com/javase/6/docs/api/java/lang/reflect/AccessibleObject.html#setAccessible%28boolean%29">setAccessible</a>
+method. Neither of these are good practice in professional code, but the
+flexibility is nice if you&rsquo;re trying to figure out what&rsquo;s going wrong in a
+library or if you want to build a proof of concept that you&rsquo;ll later make more
+professional.</p>
+
+<p>It also can be used as a substitute when other ways of exploring aren&rsquo;t
+available. In Python, nothing is compiled, so you can add print statements to
+the standard library or hack the code in other ways and it&rsquo;ll just work. Java
+has an excellent debugging story, so you can learn a lot about library code by
+stepping through it in an IDE. In Go, neither of these approaches are very
+pleasant (as far as I&rsquo;ve seen), so calling internal functions can sometimes be
+the next best thing.</p>
+
+<p>In my specific case, the milestone I was trying to achieve was for my interpeter
+to be able to successfully run the <code>time.Now</code> function in the standard library.
+Let&rsquo;s take a look at the relevant part of
+<a href="https://golang.org/src/time/time.go">time.go</a>:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class='go'><span class='line'><span class="c1">// Provided by package runtime.</span>
+</span><span class='line'><span class="kd">func</span> <span class="nx">now</span><span class="p">()</span> <span class="p">(</span><span class="nx">sec</span> <span class="kt">int64</span><span class="p">,</span> <span class="nx">nsec</span> <span class="kt">int32</span><span class="p">)</span>
+</span><span class='line'>
+</span><span class='line'><span class="c1">// Now returns the current local time.</span>
+</span><span class='line'><span class="kd">func</span> <span class="nx">Now</span><span class="p">()</span> <span class="nx">Time</span> <span class="p">{</span>
+</span><span class='line'>    <span class="nx">sec</span><span class="p">,</span> <span class="nx">nsec</span> <span class="o">:=</span> <span class="nx">now</span><span class="p">()</span>
+</span><span class='line'>    <span class="k">return</span> <span class="nx">Time</span><span class="p">{</span><span class="nx">sec</span> <span class="o">+</span> <span class="nx">unixToInternal</span><span class="p">,</span> <span class="nx">nsec</span><span class="p">,</span> <span class="nx">Local</span><span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The unexported function <code>now</code> is implemented in assembly language and gets the
+time as a pair of primitive values. The exported function <code>Now</code> wraps that
+result in a struct called <code>Time</code> with some convenience methods on it (not
+shown).</p>
+
+<p>So what does it take to get an interpreter to correctly evaluate <code>time.Now</code>?
+We&rsquo;ll need at least these pieces:</p>
+
+<ul>
+<li>Parse the file into a syntax tree. Go&rsquo;s <code>parser</code> and <code>ast</code> packages are a big
+help here.</li>
+<li>Transform the struct definition for <code>Time</code> (defined elsewhere in the file) and
+its methods into some representation known to the interpreter.</li>
+<li>Implement multiple assignment, struct creation, and the other operations used
+in <code>Now</code>.</li>
+<li>While evaluating line 6, my interpreter should notice that <code>now</code> doesn&rsquo;t have
+a Go implementation, and prefer to just call the real <code>time.now</code>. (There are
+other possible approaches, but this one seemed reasonable.)</li>
+</ul>
+
+
+<p>To prove that that last bullet point was possible, I wanted to write a quick
+dummy program that just called <code>time.now</code> (even if it needed some hacky
+mechanism), but this ended up being a <em>lot</em> harder than I was expecting. Most
+discussions on the internet basically said &ldquo;don&rsquo;t do that&rdquo;, but I decided that I
+wouldn&rsquo;t give up so easily.</p>
+
+<p>A related goal is that I wanted a way to take a string name of a function and
+get that function back. It&rsquo;s worth noting that it&rsquo;s totally unclear if I should
+expect this problem to be solvable in the first place. In C, there&rsquo;s no way to
+do it, in Java it&rsquo;s doable, and in higher-level scripting languages it&rsquo;s
+typically pretty easy. Go seems to be somewhere between C and Java in terms of
+the reflection capabilities that I expect, so I might be attempting something
+that simply can&rsquo;t be done.</p>
+
+<h2>Attempt #1: <code>reflect</code></h2>
+
+<p>Reflection is the answer in Java, so maybe in Go it&rsquo;s the same way? Sure enough,
+Go has a great <code>reflect</code> package that works in a lot of cases, and even lets you
+read unexported struct fields by name, but it doesn&rsquo;t seem to have any way to
+provide access to top-level functions (exported or unexported).</p>
+
+<p>In a language like Python, an expression like <code>time.now</code> would take the <code>time</code>
+object and pull off a field called <code>now</code>. So you might hope to do something like
+this:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class='go'><span class='line'><span class="nx">reflect</span><span class="p">.</span><span class="nx">ValueOf</span><span class="p">(</span><span class="nx">time</span><span class="p">).</span><span class="nx">MethodByName</span><span class="p">(</span><span class="s">&quot;now&quot;</span><span class="p">).</span><span class="nx">Call</span><span class="p">([]</span><span class="nx">reflect</span><span class="p">.</span><span class="nx">Value</span><span class="p">{})</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>But alas, in Go, <code>time.now</code> is resolved at compile time, and <code>time</code> isn&rsquo;t its
+own object that can be accessed like that. So it seems like <code>reflect</code> doesn&rsquo;t
+provide an easy answer here.</p>
+
+<h2>Attempt #2: <code>runtime</code></h2>
+
+<p>While I was exploring, I noticed <code>runtime.FuncForPC</code> as a way to
+<a href="http://stackoverflow.com/questions/7052693/how-to-get-the-name-of-a-function-in-go">programmatically get the name of any function</a>:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class='go'><span class='line'><span class="nx">runtime</span><span class="p">.</span><span class="nx">FuncForPC</span><span class="p">(</span><span class="nx">reflect</span><span class="p">.</span><span class="nx">ValueOf</span><span class="p">(</span><span class="nx">f</span><span class="p">).</span><span class="nx">Pointer</span><span class="p">()).</span><span class="nx">Name</span><span class="p">()</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>I dug into the implementation, and sure enough, the Go <code>runtime</code> package keeps a
+table of all functions and their names, provided by the linker. Relevant
+snippets from <a href="https://golang.org/src/runtime/symtab.go">symtab.go</a>:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class='go'><span class='line'><span class="kd">var</span> <span class="nx">firstmoduledata</span> <span class="nx">moduledata</span>  <span class="c1">// linker symbol</span>
+</span><span class='line'>
+</span><span class='line'><span class="kd">func</span> <span class="nx">findmoduledatap</span><span class="p">(</span><span class="nx">pc</span> <span class="kt">uintptr</span><span class="p">)</span> <span class="o">*</span><span class="nx">moduledata</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">for</span> <span class="nx">datap</span> <span class="o">:=</span> <span class="o">&amp;</span><span class="nx">firstmoduledata</span><span class="p">;</span> <span class="nx">datap</span> <span class="o">!=</span> <span class="kc">nil</span><span class="p">;</span> <span class="nx">datap</span> <span class="p">=</span> <span class="nx">datap</span><span class="p">.</span><span class="nx">next</span> <span class="p">{</span>
+</span><span class='line'>        <span class="o">...</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="kd">func</span> <span class="nx">findfunc</span><span class="p">(</span><span class="nx">pc</span> <span class="kt">uintptr</span><span class="p">)</span> <span class="o">*</span><span class="nx">_func</span> <span class="p">{</span>
+</span><span class='line'>    <span class="nx">datap</span> <span class="o">:=</span> <span class="nx">findmoduledatap</span><span class="p">(</span><span class="nx">pc</span><span class="p">)</span>
+</span><span class='line'>    <span class="o">...</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="kd">func</span> <span class="nx">FuncForPC</span><span class="p">(</span><span class="nx">pc</span> <span class="kt">uintptr</span><span class="p">)</span> <span class="o">*</span><span class="nx">Func</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">return</span> <span class="p">(</span><span class="o">*</span><span class="nx">Func</span><span class="p">)(</span><span class="nx">unsafe</span><span class="p">.</span><span class="nx">Pointer</span><span class="p">(</span><span class="nx">findfunc</span><span class="p">(</span><span class="nx">pc</span><span class="p">)))</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The <code>moduledata</code> struct isn&rsquo;t particularly friendly, but it looks like if I
+could access it, then I should, theoretically, be able to loop through it to
+find a pointer to a function with name <code>"time.now"</code>. With a function pointer, it
+should hopefully be possible to find a way to call it.</p>
+
+<p>Unfortunately, we&rsquo;re at the same place we started. I can&rsquo;t access
+<code>firstmoduledata</code>, <code>findmoduledatap</code>, or <code>findfunc</code> for the same reason that I
+can&rsquo;t access <code>time.now</code>. I looked through the package to find some place where
+maybe it leaks a useful pointer, but I couldn&rsquo;t find anything. Drat.</p>
+
+<p>If I was desperate, I might attempt to guess function pointers and call
+<code>FuncForPC</code> until I find one with that right name. But that seemed like a recipe
+for disaster, so I decided to look at other approaches.</p>
+
+<h2>Attempt #3: jump down to assembly language</h2>
+
+<p>An escape hatch that should definitely work is to just write my code in assembly
+language. It should be possible to make an assembly function that calls
+<code>time.now</code> then connect that function to a Go function. I cloned the Go source
+code and took a look at the
+<a href="https://golang.org/src/runtime/sys_darwin_amd64.s">Darwin AMD64 implementation</a>
+of <code>time.now</code> itself to see what it was like:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+</pre></td><td class='code'><pre><code class='c-objdump'><span class='line'><span class="c1">// func now() (sec int64, nsec int32)</span>
+</span><span class='line'><span class="n">TEXT</span> <span class="n">time</span><span class="err">·</span><span class="n">now</span><span class="p">(</span><span class="n">SB</span><span class="p">),</span><span class="n">NOSPLIT</span><span class="p">,</span><span class="err">$</span><span class="mi">0</span><span class="o">-</span><span class="mi">12</span>
+</span><span class='line'>    <span class="n">CALL</span>    <span class="n">nanotime</span><span class="o">&lt;&gt;</span><span class="p">(</span><span class="n">SB</span><span class="p">)</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="c1">// generated code for</span>
+</span><span class='line'>    <span class="c1">//    func f(x uint64) (uint64, uint64) { return x/1000000000, x%100000000 }</span>
+</span><span class='line'>    <span class="c1">// adapted to reduce duplication</span>
+</span><span class='line'>    <span class="n">MOVQ</span>    <span class="n">AX</span><span class="p">,</span> <span class="n">CX</span>
+</span><span class='line'>    <span class="n">MOVQ</span>    <span class="err">$</span><span class="mi">1360296554856532783</span><span class="p">,</span> <span class="n">AX</span>
+</span><span class='line'>    <span class="n">MULQ</span>    <span class="n">CX</span>
+</span><span class='line'>    <span class="n">ADDQ</span>    <span class="n">CX</span><span class="p">,</span> <span class="n">DX</span>
+</span><span class='line'>    <span class="n">RCRQ</span>    <span class="err">$</span><span class="mi">1</span><span class="p">,</span> <span class="n">DX</span>
+</span><span class='line'>    <span class="n">SHRQ</span>    <span class="err">$</span><span class="mi">29</span><span class="p">,</span> <span class="n">DX</span>
+</span><span class='line'>    <span class="n">MOVQ</span>    <span class="n">DX</span><span class="p">,</span> <span class="n">sec</span><span class="o">+</span><span class="mi">0</span><span class="p">(</span><span class="n">FP</span><span class="p">)</span>
+</span><span class='line'>    <span class="n">IMULQ</span>   <span class="err">$</span><span class="mi">1000000000</span><span class="p">,</span> <span class="n">DX</span>
+</span><span class='line'>    <span class="n">SUBQ</span>    <span class="n">DX</span><span class="p">,</span> <span class="n">CX</span>
+</span><span class='line'>    <span class="n">MOVL</span>    <span class="n">CX</span><span class="p">,</span> <span class="n">nsec</span><span class="o">+</span><span class="mi">8</span><span class="p">(</span><span class="n">FP</span><span class="p">)</span>
+</span><span class='line'>    <span class="n">RET</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Ugh. Maybe I shouldn&rsquo;t be scared off by assembly, but learning the calling
+conventions and writing a separate wrapper for every function I wanted to call
+for every architecture didn&rsquo;t seem pleasant. I decided to defer that idea and
+look at other options. Having a solution in pure Go would certainly be ideal.</p>
+
+<h2>Attempt #4: CGo</h2>
+
+<p>Another escape hatch that seemed promising is
+<a href="http://blog.golang.org/c-go-cgo">CGo</a>, which is Go&rsquo;s mechanism for directly
+calling C functions from Go code. Here&rsquo;s a first attempt:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+</pre></td><td class='code'><pre><code class='go'><span class='line'><span class="cm">/*</span>
+</span><span class='line'><span class="cm">int time·now();</span>
+</span><span class='line'><span class="cm">int time_now_wrapper() {</span>
+</span><span class='line'><span class="cm">    return time·now();</span>
+</span><span class='line'><span class="cm">}</span>
+</span><span class='line'><span class="cm">*/</span>
+</span><span class='line'><span class="kn">import</span> <span class="s">&quot;C&quot;</span>
+</span><span class='line'>
+</span><span class='line'><span class="kd">func</span> <span class="nx">callTimeNow</span><span class="p">()</span> <span class="p">{</span>
+</span><span class='line'>    <span class="nx">C</span><span class="p">.</span><span class="nx">time_now_wrapper</span><span class="p">()</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>And here&rsquo;s the error that it gives:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Undefined symbols for architecture x86_64:
+</span><span class='line'>  "_time·now", referenced from:
+</span><span class='line'>      _time_now_wrapper in foo.cgo2.o
+</span><span class='line'>      __cgo_b552a62968a6_Cfunc_time_now_wrapper in foo.cgo2.o
+</span><span class='line'>ld: symbol(s) not found for architecture x86_64
+</span><span class='line'>clang: error: linker command failed with exit code 1 (use -v to see invocation)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Hmm, it seems to be putting an underscore before every function name, which
+isn&rsquo;t really what I want. Maybe there&rsquo;s a way around that, but dealing with
+multiple return values in <code>time·now</code> seemed like it may be another barrier, and
+from my reading, CGo calls have a lot of overhead because it&rsquo;s doing a lot of
+translation work so that you can integrate with existing C code. In Java speak,
+it seems like it&rsquo;s JNA, not JNI. So while CGo seems useful, it looks like it&rsquo;s
+not really the solution to my problem.</p>
+
+<h2>Attempt #5: <code>go:linkname</code></h2>
+
+<p>As I was digging through the standard library source code I saw something
+interesting in the <code>runtime</code> package in
+<a href="https://golang.org/src/runtime/stubs.go">stubs.go</a>:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class='go'><span class='line'><span class="c1">//go:linkname time_now time.now</span>
+</span><span class='line'><span class="kd">func</span> <span class="nx">time_now</span><span class="p">()</span> <span class="p">(</span><span class="nx">sec</span> <span class="kt">int64</span><span class="p">,</span> <span class="nx">nsec</span> <span class="kt">int32</span><span class="p">)</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Interesting! I had seen semantically-meaningful comments like this before (like
+with the CGo example, and also in other places), but I hadn&rsquo;t seen this one. It
+looks like it&rsquo;s saying &ldquo;linker, please use <code>time.now</code> as the implementation of
+<code>runtime.time_now</code>&rdquo;. Sure enough, the
+<a href="https://golang.org/cmd/compile/#hdr-Compiler_Directives">documentation</a>
+suggests that this works, as long as your file imports <code>unsafe</code>. So I tried it
+out:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+</pre></td><td class='code'><pre><code class='go'><span class='line'><span class="kn">package</span> <span class="nx">main</span>
+</span><span class='line'>
+</span><span class='line'><span class="kn">import</span> <span class="p">(</span>
+</span><span class='line'>    <span class="s">&quot;fmt&quot;</span>
+</span><span class='line'>    <span class="nx">_</span> <span class="s">&quot;unsafe&quot;</span>
+</span><span class='line'><span class="p">)</span>
+</span><span class='line'>
+</span><span class='line'><span class="c1">//go:linkname time_now time.now</span>
+</span><span class='line'><span class="kd">func</span> <span class="nx">time_now</span><span class="p">()</span> <span class="p">(</span><span class="nx">sec</span> <span class="kt">int64</span><span class="p">,</span> <span class="nx">nsec</span> <span class="kt">int32</span><span class="p">)</span>
+</span><span class='line'>
+</span><span class='line'><span class="kd">func</span> <span class="nx">main</span><span class="p">()</span> <span class="p">{</span>
+</span><span class='line'>    <span class="nx">sec</span><span class="p">,</span> <span class="nx">nsec</span> <span class="o">:=</span> <span class="nx">time_now</span><span class="p">()</span>
+</span><span class='line'>    <span class="nx">fmt</span><span class="p">.</span><span class="nx">Println</span><span class="p">(</span><span class="nx">sec</span><span class="p">,</span> <span class="nx">nsec</span><span class="p">)</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Let&rsquo;s see what happens:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># command-line-arguments
+</span><span class='line'>./sandbox.go:9: missing function body for "time_now"</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Drat. Isn&rsquo;t the missing function body the <em>whole point</em> of the bodyless syntax
+to allow for externally-implemented functions? The
+<a href="https://golang.org/ref/spec#Function_declarations">spec</a> certainly seems to
+think that it&rsquo;s valid.</p>
+
+<p>Just to see what would happen, I replaced the empty function body with a dummy
+implementation:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class='go'><span class='line'><span class="c1">//go:linkname time_now time.now</span>
+</span><span class='line'><span class="kd">func</span> <span class="nx">time_now</span><span class="p">()</span> <span class="p">(</span><span class="nx">sec</span> <span class="kt">int64</span><span class="p">,</span> <span class="nx">nsec</span> <span class="kt">int32</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">return</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Then I tried again and got this error:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># command-line-arguments
+</span><span class='line'>2016/03/16 22:50:31 duplicate symbol time.now (types 1 and 1) in main and /usr/local/Cellar/go/1.6/libexec/pkg/darwin_amd64/runtime.a(sys_darwin_amd64)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>When I don&rsquo;t implement the function, it complains that there&rsquo;s no
+implementation, but when I do implement it, it complains that the function is
+implemented twice! How frustrating!</p>
+
+<h2>Getting <code>go:linkname</code> to work</h2>
+
+<p>For a while, it seemed like the <code>go:linkname</code> approach wasn&rsquo;t going to work out,
+but then I noticed something suspicious: the error formatting is different. It
+looks like the &ldquo;missing function body&rdquo; error is from the compiler, but the
+&ldquo;duplicate symbol&rdquo; error is from the linker. Why would the compiler care about a
+function body being missing, if it&rsquo;s the linker&rsquo;s job to make sure every symbol
+gets an implementation?</p>
+
+<p>I decided to dig into the code for the compiler to see why it might be
+generating this error. Here&rsquo;s what I found in
+<a href="https://golang.org/src/cmd/compile/internal/gc/pgen.go">pgen.go</a>:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class='go'><span class='line'><span class="kd">func</span> <span class="nx">compile</span><span class="p">(</span><span class="nx">fn</span> <span class="o">*</span><span class="nx">Node</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="o">...</span>
+</span><span class='line'>    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="nx">fn</span><span class="p">.</span><span class="nx">Nbody</span><span class="p">.</span><span class="nx">Slice</span><span class="p">())</span> <span class="o">==</span> <span class="mi">0</span> <span class="p">{</span>
+</span><span class='line'>        <span class="k">if</span> <span class="nx">pure_go</span> <span class="o">!=</span> <span class="mi">0</span> <span class="o">||</span> <span class="nx">strings</span><span class="p">.</span><span class="nx">HasPrefix</span><span class="p">(</span><span class="nx">fn</span><span class="p">.</span><span class="nx">Func</span><span class="p">.</span><span class="nx">Nname</span><span class="p">.</span><span class="nx">Sym</span><span class="p">.</span><span class="nx">Name</span><span class="p">,</span> <span class="s">&quot;init.&quot;</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>            <span class="nx">Yyerror</span><span class="p">(</span><span class="s">&quot;missing function body for %q&quot;</span><span class="p">,</span> <span class="nx">fn</span><span class="p">.</span><span class="nx">Func</span><span class="p">.</span><span class="nx">Nname</span><span class="p">.</span><span class="nx">Sym</span><span class="p">.</span><span class="nx">Name</span><span class="p">)</span>
+</span><span class='line'>            <span class="k">return</span>
+</span><span class='line'>        <span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Something is causing that inner <code>if</code> statement to evaluate to <code>true</code>, and my
+function doesn&rsquo;t have to do with <code>init</code>, so it looks like <code>pure_go</code> is nonzero
+when it should be zero. Searching for <code>pure_go</code> shows this compiler flag:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class='go'><span class='line'><span class="nx">obj</span><span class="p">.</span><span class="nx">Flagcount</span><span class="p">(</span><span class="s">&quot;complete&quot;</span><span class="p">,</span> <span class="s">&quot;compiling complete package (no C or assembly)&quot;</span><span class="p">,</span> <span class="o">&amp;</span><span class="nx">pure_go</span><span class="p">)</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Makes sense: if your code doesn&rsquo;t have any way of defining external functions,
+then it&rsquo;s friendlier to give an error at compile time with the location of the
+problem. But it looks like <code>go:linkname</code> was overlooked somewhere in the
+process. It certainly is a bit of an edge case.</p>
+
+<p>After some searching, I found the culprit in
+<a href="https://golang.org/src/cmd/go/build.go">build.go</a>:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class='go'><span class='line'><span class="nx">extFiles</span> <span class="o">:=</span> <span class="nb">len</span><span class="p">(</span><span class="nx">p</span><span class="p">.</span><span class="nx">CgoFiles</span><span class="p">)</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="nx">p</span><span class="p">.</span><span class="nx">CFiles</span><span class="p">)</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="nx">p</span><span class="p">.</span><span class="nx">CXXFiles</span><span class="p">)</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="nx">p</span><span class="p">.</span><span class="nx">MFiles</span><span class="p">)</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="nx">p</span><span class="p">.</span><span class="nx">FFiles</span><span class="p">)</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="nx">p</span><span class="p">.</span><span class="nx">SFiles</span><span class="p">)</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="nx">p</span><span class="p">.</span><span class="nx">SysoFiles</span><span class="p">)</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="nx">p</span><span class="p">.</span><span class="nx">SwigFiles</span><span class="p">)</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="nx">p</span><span class="p">.</span><span class="nx">SwigCXXFiles</span><span class="p">)</span>
+</span><span class='line'><span class="o">...</span>
+</span><span class='line'><span class="k">if</span> <span class="nx">extFiles</span> <span class="o">==</span> <span class="mi">0</span> <span class="p">{</span>
+</span><span class='line'>    <span class="nx">gcargs</span> <span class="p">=</span> <span class="nb">append</span><span class="p">(</span><span class="nx">gcargs</span><span class="p">,</span> <span class="s">&quot;-complete&quot;</span><span class="p">)</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>So it&rsquo;s just counting the number of non-Go files of each type. Since I&rsquo;m only
+compiling with Go files, it assumes that every function needs a body. But on the
+plus side, the code suggests a workaround: just add a file of any of those
+types. I already know how to use CGo, so let&rsquo;s try that:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+</pre></td><td class='code'><pre><code class='go'><span class='line'><span class="kn">package</span> <span class="nx">main</span>
+</span><span class='line'>
+</span><span class='line'><span class="kn">import</span> <span class="p">(</span>
+</span><span class='line'>    <span class="s">&quot;C&quot;</span>
+</span><span class='line'>    <span class="s">&quot;fmt&quot;</span>
+</span><span class='line'>    <span class="nx">_</span> <span class="s">&quot;unsafe&quot;</span>
+</span><span class='line'><span class="p">)</span>
+</span><span class='line'>
+</span><span class='line'><span class="c1">//go:linkname time_now time.now</span>
+</span><span class='line'><span class="kd">func</span> <span class="nx">time_now</span><span class="p">()</span> <span class="p">(</span><span class="nx">sec</span> <span class="kt">int64</span><span class="p">,</span> <span class="nx">nsec</span> <span class="kt">int32</span><span class="p">)</span>
+</span><span class='line'>
+</span><span class='line'><span class="kd">func</span> <span class="nx">main</span><span class="p">()</span> <span class="p">{</span>
+</span><span class='line'>    <span class="nx">sec</span><span class="p">,</span> <span class="nx">nsec</span> <span class="o">:=</span> <span class="nx">time_now</span><span class="p">()</span>
+</span><span class='line'>    <span class="nx">fmt</span><span class="p">.</span><span class="nx">Println</span><span class="p">(</span><span class="nx">sec</span><span class="p">,</span> <span class="nx">nsec</span><span class="p">)</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>And here&rsquo;s what happens when you try to build that:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>main.main: call to external function main.time_now
+</span><span class='line'>main.main: main.time_now: not defined
+</span><span class='line'>main.main: undefined: main.time_now</span></code></pre></td></tr></table></div></figure>
+
+
+<p>A different error! Now the linker is complaining that the function doesn&rsquo;t
+exist. After some experimentation, I discovered that CGo seems to cause
+<code>go:linkname</code> to be disabled for that file. If I remove the import of <code>"C"</code> and
+move it to another file, then compile the two together, then I get this output:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>1458197809 407398202</span></code></pre></td></tr></table></div></figure>
+
+
+<p>It worked! If your only goal is to get access to <code>time.now</code>, then this is good
+enough, but I&rsquo;m hoping that I can go a bit further.</p>
+
+<h2>Looking up functions by name</h2>
+
+<p>Now that I know that <code>go:linkname</code> works, I can use it to access the
+<code>firstmoduledata</code> structure mentioned in attempt #2, which is a table containing
+information on all compiled functions in the binary. My hope is that I can use
+it to write a function that takes a function name as a string, like
+<code>"time.now"</code>, and provides that function.</p>
+
+<p>One problem is that <code>runtime.firstmoduledata</code> has type <code>runtime.moduledata</code>,
+which is an unexported type, so I can&rsquo;t use it in my code. But as a total hack,
+I <em>can</em> just copy the struct to my code (or, at least, enough of it to keep the
+alignment correct) and pretend that my struct is the real thing. From there, I
+can pretty much copy the code from the <code>runtime</code> package to do a full scan
+through the list of functions until I find the right one:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+</pre></td><td class='code'><pre><code class='go'><span class='line'><span class="kd">func</span> <span class="nx">FindFuncWithName</span><span class="p">(</span><span class="nx">name</span> <span class="kt">string</span><span class="p">)</span> <span class="p">(</span><span class="kt">uintptr</span><span class="p">,</span> <span class="kt">error</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">for</span> <span class="nx">moduleData</span> <span class="o">:=</span> <span class="o">&amp;</span><span class="nx">Firstmoduledata</span><span class="p">;</span> <span class="nx">moduleData</span> <span class="o">!=</span> <span class="kc">nil</span><span class="p">;</span> <span class="nx">moduleData</span> <span class="p">=</span> <span class="nx">moduleData</span><span class="p">.</span><span class="nx">next</span> <span class="p">{</span>
+</span><span class='line'>        <span class="k">for</span> <span class="nx">_</span><span class="p">,</span> <span class="nx">ftab</span> <span class="o">:=</span> <span class="k">range</span> <span class="nx">moduleData</span><span class="p">.</span><span class="nx">ftab</span> <span class="p">{</span>
+</span><span class='line'>            <span class="nx">f</span> <span class="o">:=</span> <span class="p">(</span><span class="o">*</span><span class="nx">runtime</span><span class="p">.</span><span class="nx">Func</span><span class="p">)(</span><span class="nx">unsafe</span><span class="p">.</span><span class="nx">Pointer</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">moduleData</span><span class="p">.</span><span class="nx">pclntable</span><span class="p">[</span><span class="nx">ftab</span><span class="p">.</span><span class="nx">funcoff</span><span class="p">]))</span>
+</span><span class='line'>            <span class="k">if</span> <span class="nx">f</span><span class="p">.</span><span class="nx">Name</span><span class="p">()</span> <span class="o">==</span> <span class="nx">name</span> <span class="p">{</span>
+</span><span class='line'>                <span class="k">return</span> <span class="nx">f</span><span class="p">.</span><span class="nx">Entry</span><span class="p">(),</span> <span class="kc">nil</span>
+</span><span class='line'>            <span class="p">}</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>    <span class="k">return</span> <span class="mi">0</span><span class="p">,</span> <span class="nx">fmt</span><span class="p">.</span><span class="nx">Errorf</span><span class="p">(</span><span class="s">&quot;Invalid function name: %s&quot;</span><span class="p">,</span> <span class="nx">name</span><span class="p">)</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This seems to work! This code:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class='go'><span class='line'><span class="nx">ptr</span><span class="p">,</span> <span class="nx">_</span> <span class="o">:=</span> <span class="nx">FindFuncWithName</span><span class="p">(</span><span class="s">&quot;math.Sqrt&quot;</span><span class="p">)</span>
+</span><span class='line'><span class="nx">fmt</span><span class="p">.</span><span class="nx">Printf</span><span class="p">(</span><span class="s">&quot;Found pointer 0x%x\nNormal function: %s&quot;</span><span class="p">,</span> <span class="nx">ptr</span><span class="p">,</span> <span class="nx">math</span><span class="p">.</span><span class="nx">Sqrt</span><span class="p">)</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>prints this:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Found pointer 0x104250
+</span><span class='line'>Normal function: %!s(func(float64) float64=0x104250)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>So the underlying code pointer is correct! Now we just need to figure out how to
+use it&hellip;</p>
+
+<h2>Calling a function by pointer</h2>
+
+<p>You would think that having a function pointer would be the end of the story.
+In C you could just cast the pointer value to the right function type, then call
+it. But Go isn&rsquo;t quite so generous. For one, Go normally doesn&rsquo;t just let you
+cast between types like that, but <code>unsafe.Pointer</code> can be used to circumvent
+some safety checks. You might try just casting it to a function of the proper
+type:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class='go'><span class='line'><span class="nx">ptr</span><span class="p">,</span> <span class="nx">_</span> <span class="o">:=</span> <span class="nx">FindFuncWithName</span><span class="p">(</span><span class="s">&quot;time.now&quot;</span><span class="p">)</span>
+</span><span class='line'><span class="nx">timeNow</span> <span class="o">:=</span> <span class="p">(</span><span class="kd">func</span><span class="p">()</span> <span class="p">(</span><span class="kt">int64</span><span class="p">,</span> <span class="kt">int32</span><span class="p">))(</span><span class="nx">unsafe</span><span class="p">.</span><span class="nx">Pointer</span><span class="p">(</span><span class="nx">ptr</span><span class="p">))</span>
+</span><span class='line'><span class="nx">sec</span><span class="p">,</span> <span class="nx">msec</span> <span class="o">:=</span> <span class="nx">timeNow</span><span class="p">()</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>But that type of cast doesn&rsquo;t compile; pointers can&rsquo;t be cast to functions, not
+even using <code>unsafe.Pointer</code>. What if we literally cast it to a pointer to a
+<code>func</code> type?</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class='go'><span class='line'><span class="nx">ptr</span><span class="p">,</span> <span class="nx">_</span> <span class="o">:=</span> <span class="nx">FindFuncWithName</span><span class="p">(</span><span class="s">&quot;time.now&quot;</span><span class="p">)</span>
+</span><span class='line'><span class="nx">timeNow</span> <span class="o">:=</span> <span class="p">(</span><span class="o">*</span><span class="kd">func</span><span class="p">()</span> <span class="p">(</span><span class="kt">int64</span><span class="p">,</span> <span class="kt">int32</span><span class="p">))(</span><span class="nx">unsafe</span><span class="p">.</span><span class="nx">Pointer</span><span class="p">(</span><span class="nx">ptr</span><span class="p">))</span>
+</span><span class='line'><span class="nx">sec</span><span class="p">,</span> <span class="nx">msec</span> <span class="o">:=</span> <span class="p">(</span><span class="o">*</span><span class="nx">timeNow</span><span class="p">)()</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This compiles, but crashes at runtime:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>unexpected fault address 0xb01dfacedebac1e
+</span><span class='line'>fatal error: fault
+</span><span class='line'>[signal 0xb code=0x1 addr=0xb01dfacedebac1e pc=0x7e450]</span></code></pre></td></tr></table></div></figure>
+
+
+<p>(Look at that fault address. Apparently someone
+<a href="https://golang.org/src/runtime/signal_amd64x.go">had a sense of humor</a>.)</p>
+
+<p>This isn&rsquo;t a surprising outcome; functions in Go are first-class values, so
+their implementation is naturally more interesting than in C. When you pass
+around a <code>func</code>, you&rsquo;re not just passing around a code pointer, you&rsquo;re passing
+around a <em>function value</em> of some sort, and we&rsquo;ll need to come up with a
+function value somehow if we&rsquo;re to have any hope of calling our function. That
+function value needs to have our pointer as its underlying code pointer.</p>
+
+<p>I didn&rsquo;t see any obvious ways to create a function value from scratch, so I
+figured I&rsquo;d take a different approach: take an existing function value and hack
+the code pointer to be the one I want. After spending some time reading
+<a href="http://research.swtch.com/interfaces">how interfaces work</a> in Go and reading
+the implementation of the <a href="https://golang.org/src/reflect/value.go">reflect</a>
+library, an approach that seemed promising was to treat the function as an
+<code>interface{}</code> (that&rsquo;s Go&rsquo;s equivalent of <code>Object</code> or <code>void*</code> or <code>any</code>: a type
+that includes every other type), which internally stores it as a (type, pointer)
+pair. Then I could pull the pointer off and work with it reliably. The <code>reflect</code>
+source code suggests that the <em>code pointer</em> (the pointer to the actual machine
+code) is the first value in a function object.</p>
+
+<p>So, as a first attempt, I created a dummy function called <code>timeNow</code> then defined
+some structs to make it easy to swap out its code pointer with the real
+<code>time.now</code> code pointer:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+</pre></td><td class='code'><pre><code class='go'><span class='line'><span class="kd">func</span> <span class="nx">timeNow</span><span class="p">()</span> <span class="p">(</span><span class="kt">int64</span><span class="p">,</span> <span class="kt">int32</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">return</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="kd">type</span> <span class="nx">Interface</span> <span class="kd">struct</span> <span class="p">{</span>
+</span><span class='line'>    <span class="nx">typ</span>     <span class="nx">unsafe</span><span class="p">.</span><span class="nx">Pointer</span>
+</span><span class='line'>    <span class="nx">funcPtr</span> <span class="o">*</span><span class="nx">Func</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="kd">type</span> <span class="nx">Func</span> <span class="kd">struct</span> <span class="p">{</span>
+</span><span class='line'>    <span class="nx">codePtr</span> <span class="kt">uintptr</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="kd">func</span> <span class="nx">main</span><span class="p">()</span> <span class="p">{</span>
+</span><span class='line'>    <span class="nx">timeNowCodePtr</span><span class="p">,</span> <span class="nx">_</span> <span class="o">:=</span> <span class="nx">FindFuncWithName</span><span class="p">(</span><span class="s">&quot;time.now&quot;</span><span class="p">)</span>
+</span><span class='line'>    <span class="kd">var</span> <span class="nx">timeNowInterface</span> <span class="kd">interface</span><span class="p">{}</span> <span class="p">=</span> <span class="nx">timeNow</span>
+</span><span class='line'>    <span class="nx">timeNowInterfacePtr</span> <span class="o">:=</span> <span class="p">(</span><span class="o">*</span><span class="nx">Interface</span><span class="p">)(</span><span class="nx">unsafe</span><span class="p">.</span><span class="nx">Pointer</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">timeNowInterface</span><span class="p">))</span>
+</span><span class='line'>    <span class="nx">timeNowInterfacePtr</span><span class="p">.</span><span class="nx">funcPtr</span><span class="p">.</span><span class="nx">codePtr</span> <span class="p">=</span> <span class="nx">timeNowCodePtr</span>
+</span><span class='line'>    <span class="nx">sec</span><span class="p">,</span> <span class="nx">msec</span> <span class="o">:=</span> <span class="nx">timeNow</span><span class="p">()</span>
+</span><span class='line'>    <span class="nx">fmt</span><span class="p">.</span><span class="nx">Println</span><span class="p">(</span><span class="nx">sec</span><span class="p">,</span> <span class="nx">msec</span><span class="p">)</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>And, as you might guess, it crashed:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class='go'><span class='line'><span class="nx">unexpected</span> <span class="nx">fault</span> <span class="nx">address</span> <span class="mh">0x129e80</span>
+</span><span class='line'><span class="nx">fatal</span> <span class="kt">error</span><span class="p">:</span> <span class="nx">fault</span>
+</span><span class='line'><span class="p">[</span><span class="nx">signal</span> <span class="mh">0xa</span> <span class="nx">code</span><span class="p">=</span><span class="mh">0x2</span> <span class="nx">addr</span><span class="p">=</span><span class="mh">0x129e80</span> <span class="nx">pc</span><span class="p">=</span><span class="mh">0x20be</span><span class="p">]</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>After some experimenting, I discovered that the crash was happening <em>even
+without calling the function</em>. The crash was from the line
+<code>timeNowInterfacePtr.funcPtr.codePtr = timeNowCodePtr</code>. After double-checking
+that the pointers were what I expect, I realized the problem: the function
+object I was modifying was probably in the code segment, in read-only memory.
+Just like how the machine code isn&rsquo;t going to change, Go expects that the
+<code>timeNow</code> function value isn&rsquo;t going to change at runtime. What I really needed
+to do was <em>allocate</em> a function object on the heap so that I could safely change
+its underlying code pointer.</p>
+
+<p>So how do you dynamically allocate a function in Go? That&rsquo;s what lambdas are
+for, right? Let&rsquo;s try using one! Instead of the top-level <code>timeNow</code>, we can
+write our <code>main</code> function like this (the only difference is the new definition
+of <code>timeNow</code>):</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class='go'><span class='line'><span class="kd">func</span> <span class="nx">main</span><span class="p">()</span> <span class="p">{</span>
+</span><span class='line'>    <span class="nx">timeNowCodePtr</span><span class="p">,</span> <span class="nx">_</span> <span class="o">:=</span> <span class="nx">FindFuncWithName</span><span class="p">(</span><span class="s">&quot;time.now&quot;</span><span class="p">)</span>
+</span><span class='line'>    <span class="nx">timeNow</span> <span class="o">:=</span> <span class="kd">func</span><span class="p">()</span> <span class="p">(</span><span class="kt">int64</span><span class="p">,</span> <span class="kt">int32</span><span class="p">)</span> <span class="p">{</span> <span class="k">return</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span> <span class="p">}</span>
+</span><span class='line'>    <span class="kd">var</span> <span class="nx">timeNowInterface</span> <span class="kd">interface</span><span class="p">{}</span> <span class="p">=</span> <span class="nx">timeNow</span>
+</span><span class='line'>    <span class="nx">timeNowInterfacePtr</span> <span class="o">:=</span> <span class="p">(</span><span class="o">*</span><span class="nx">Interface</span><span class="p">)(</span><span class="nx">unsafe</span><span class="p">.</span><span class="nx">Pointer</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">timeNowInterface</span><span class="p">))</span>
+</span><span class='line'>    <span class="nx">timeNowInterfacePtr</span><span class="p">.</span><span class="nx">funcPtr</span><span class="p">.</span><span class="nx">codePtr</span> <span class="p">=</span> <span class="nx">timeNowCodePtr</span>
+</span><span class='line'>    <span class="nx">sec</span><span class="p">,</span> <span class="nx">msec</span> <span class="o">:=</span> <span class="nx">timeNow</span><span class="p">()</span>
+</span><span class='line'>    <span class="nx">fmt</span><span class="p">.</span><span class="nx">Println</span><span class="p">(</span><span class="nx">sec</span><span class="p">,</span> <span class="nx">msec</span><span class="p">)</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>And, again, it crashes. I&rsquo;ve seen how lambdas work in other languages, so I
+suspected why: when a lambda takes in no outside variables, there&rsquo;s no need to
+do an allocation each time, so a common optimization is to just have a single
+shared instance for simple lambdas like the one I wrote, so probably I&rsquo;m again
+trying to write to the code segment. To work around this, we can trick the
+compiler into allocating a new function object each time by making the function
+a real closure and pulling in a variable from the outer scope (even a trivial
+one):</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class='go'><span class='line'><span class="kd">func</span> <span class="nx">main</span><span class="p">()</span> <span class="p">{</span>
+</span><span class='line'>    <span class="nx">timeNowCodePtr</span><span class="p">,</span> <span class="nx">_</span> <span class="o">:=</span> <span class="nx">FindFuncWithName</span><span class="p">(</span><span class="s">&quot;time.now&quot;</span><span class="p">)</span>
+</span><span class='line'>    <span class="kd">var</span> <span class="nx">x</span> <span class="kt">int64</span> <span class="p">=</span> <span class="mi">0</span>
+</span><span class='line'>    <span class="nx">timeNow</span> <span class="o">:=</span> <span class="kd">func</span><span class="p">()</span> <span class="p">(</span><span class="kt">int64</span><span class="p">,</span> <span class="kt">int32</span><span class="p">)</span> <span class="p">{</span> <span class="k">return</span> <span class="nx">x</span><span class="p">,</span> <span class="mi">0</span> <span class="p">}</span>
+</span><span class='line'>    <span class="kd">var</span> <span class="nx">timeNowInterface</span> <span class="kd">interface</span><span class="p">{}</span> <span class="p">=</span> <span class="nx">timeNow</span>
+</span><span class='line'>    <span class="nx">timeNowInterfacePtr</span> <span class="o">:=</span> <span class="p">(</span><span class="o">*</span><span class="nx">Interface</span><span class="p">)(</span><span class="nx">unsafe</span><span class="p">.</span><span class="nx">Pointer</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">timeNowInterface</span><span class="p">))</span>
+</span><span class='line'>    <span class="nx">timeNowInterfacePtr</span><span class="p">.</span><span class="nx">funcPtr</span><span class="p">.</span><span class="nx">codePtr</span> <span class="p">=</span> <span class="nx">timeNowCodePtr</span>
+</span><span class='line'>    <span class="nx">sec</span><span class="p">,</span> <span class="nx">msec</span> <span class="o">:=</span> <span class="nx">timeNow</span><span class="p">()</span>
+</span><span class='line'>    <span class="nx">fmt</span><span class="p">.</span><span class="nx">Println</span><span class="p">(</span><span class="nx">sec</span><span class="p">,</span> <span class="nx">msec</span><span class="p">)</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>And it works!</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>1458245880 151691912</span></code></pre></td></tr></table></div></figure>
+
+
+<h2>Turning it into a library</h2>
+
+<p>This code is almost useful, but wouldn&rsquo;t really work as a library yet because it
+would require the function&rsquo;s type to be hard-coded into the library. We could
+have the library caller pass in a function that will be modified, but that has
+gotchas like the read-only memory problem I ran into above.</p>
+
+<p>Instead, I looked around at possible API approaches, and I got some nice
+inspiration from the example code for
+<a href="https://golang.org/pkg/reflect/#MakeFunc">reflect.MakeFunc</a>.</p>
+
+<p>We&rsquo;ll try writing a <code>GetFunc</code> function that can be used like this:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class='go'><span class='line'><span class="kd">var</span> <span class="nx">timeNow</span> <span class="kd">func</span><span class="p">()</span> <span class="p">(</span><span class="kt">int64</span><span class="p">,</span> <span class="kt">int32</span><span class="p">)</span>
+</span><span class='line'><span class="nx">GetFunc</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">timeNow</span><span class="p">,</span> <span class="s">&quot;time.now&quot;</span><span class="p">)</span>
+</span><span class='line'><span class="nx">sec</span><span class="p">,</span> <span class="nx">msec</span> <span class="o">:=</span> <span class="nx">timeNow</span><span class="p">()</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>But how can <code>GetFunc</code> allocate a function value? Above, we used a lambda
+expression, but that doesn&rsquo;t work if the type isn&rsquo;t known until runtime.</p>
+
+<p>Reflection to the rescue! We can call <code>reflect.MakeFunc</code> to create a function
+value with a particular type. In this case, we don&rsquo;t really care what the
+implementation is because we&rsquo;re going to be modifying its code pointer anyway.
+We end up with a <code>reflect.Value</code> object with a memory layout like this:</p>
+
+<p><img src="/images/function_pointer_diagram.png" alt="Function pointer layout" /></p>
+
+<p>The <code>ptr</code> field in the <code>reflect.Value</code> definition is unexported, but we can <em>use
+reflection on the <code>reflect.Value</code></em> to get it, then treat it as a pointer to a
+function object, then modify that function object&rsquo;s code pointer to be what we
+want. The full code looks like this:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class='go'><span class='line'><span class="kd">type</span> <span class="nx">Func</span> <span class="kd">struct</span> <span class="p">{</span>
+</span><span class='line'>    <span class="nx">codePtr</span> <span class="kt">uintptr</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="kd">func</span> <span class="nx">CreateFuncForCodePtr</span><span class="p">(</span><span class="nx">outFuncPtr</span> <span class="kd">interface</span><span class="p">{},</span> <span class="nx">codePtr</span> <span class="kt">uintptr</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="c1">// outFuncPtr is a pointer to a function, and outFuncVal acts as *outFuncPtr.</span>
+</span><span class='line'>    <span class="nx">outFuncVal</span> <span class="o">:=</span> <span class="nx">reflect</span><span class="p">.</span><span class="nx">ValueOf</span><span class="p">(</span><span class="nx">outFuncPtr</span><span class="p">).</span><span class="nx">Elem</span><span class="p">()</span>
+</span><span class='line'>    <span class="nx">newFuncVal</span> <span class="o">:=</span> <span class="nx">reflect</span><span class="p">.</span><span class="nx">MakeFunc</span><span class="p">(</span><span class="nx">outFuncVal</span><span class="p">.</span><span class="nx">Type</span><span class="p">(),</span> <span class="kc">nil</span><span class="p">)</span>
+</span><span class='line'>    <span class="nx">funcValuePtr</span> <span class="o">:=</span> <span class="nx">reflect</span><span class="p">.</span><span class="nx">ValueOf</span><span class="p">(</span><span class="nx">newFuncVal</span><span class="p">).</span><span class="nx">FieldByName</span><span class="p">(</span><span class="s">&quot;ptr&quot;</span><span class="p">).</span><span class="nx">Pointer</span><span class="p">()</span>
+</span><span class='line'>    <span class="nx">funcPtr</span> <span class="o">:=</span> <span class="p">(</span><span class="o">*</span><span class="nx">Func</span><span class="p">)(</span><span class="nx">unsafe</span><span class="p">.</span><span class="nx">Pointer</span><span class="p">(</span><span class="nx">funcValuePtr</span><span class="p">))</span>
+</span><span class='line'>    <span class="nx">funcPtr</span><span class="p">.</span><span class="nx">codePtr</span> <span class="p">=</span> <span class="nx">codePtr</span>
+</span><span class='line'>    <span class="nx">outFuncVal</span><span class="p">.</span><span class="nx">Set</span><span class="p">(</span><span class="nx">newFuncVal</span><span class="p">)</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>And that&rsquo;s it! That function modifies its argument to be the function at
+<code>codePtr</code>. Implementing the main <code>GetFunc</code> API is just a matter of tying
+together <code>FindFuncWithName</code> and <code>CreateFuncForCodePtr</code>; details are in the
+<a href="https://github.com/alangpierce/go-forceexport/blob/master/forceexport.go">source code</a>.</p>
+
+<h2>Future steps and lessons learned</h2>
+
+<p>This API still isn&rsquo;t ideal; the library user still needs to know the type in
+advance, and if they get it wrong, there will be horrible consequences at
+runtime. At the end of the day, the library isn&rsquo;t significantly more useful than
+<code>go:linkname</code>, but it has some advantages, and is a good starting point for more
+interesting tricks. It&rsquo;s potentially possible, but probably harder, to make a
+function that takes a <code>string</code> and returns a <code>reflect.Value</code> of the function,
+which would be ideal. But that&rsquo;s out of scope for now. Also, the
+<a href="https://github.com/alangpierce/go-forceexport#use-cases-and-pitfalls">README</a>
+has a number of other warnings and things to consider. For example, this
+approach will sometimes completely break due to function inlining.</p>
+
+<p>Go is certainly in an interesting place in the space of languages. It&rsquo;s dynamic
+enough that it&rsquo;s not crazy to look up a function by name, but it&rsquo;s much more
+performance-focused than, say, Java. The reflection capabilities are good for a
+systems language, but sometimes the better escape hatch is to just use pointers.</p>
+
+<p>I&rsquo;d be happy to hear any feedback or corrections in the comments below. Like I
+mentioned, I&rsquo;m still learning all of this stuff, so I probably overlooked some
+things and got some terminology wrong.</p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -573,6 +1478,10 @@ Let me know in the comments!</p>
     <section>
   <h1>Recent Posts</h1>
   <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2016/03/17/adventures-in-go-accessing-unexported-functions/">Adventures in Go: Accessing Unexported Functions</a>
+      </li>
     
       <li class="post">
         <a href="/blog/2014/07/07/bigbingo-khan-academys-new-bigquery-backed-a-b-testing-framework/">BigBingo: Khan Academy's New BigQuery-backed A/B Testing Framework</a>
