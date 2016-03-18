@@ -548,7 +548,7 @@ func main() {
 
 And, as you might guess, it crashed:
 
-```go
+```plain
 unexpected fault address 0x129e80
 fatal error: fault
 [signal 0xa code=0x2 addr=0x129e80 pc=0x20be]

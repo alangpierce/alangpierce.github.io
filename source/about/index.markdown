@@ -6,12 +6,20 @@ sharing: false
 footer: true
 ---
 
-At Khan Academy I worked on the infrastructure team, which mostly focuses on
-site performance and developer happiness.
+I'm a developer with a wide range of interests: CS theory, math, compilers,
+distributed systems, software engineering, and lots of other things. I'm
+typically a "backend" person in one way or another, although I've also done a
+fair amount of UI work.
 
-Before that, I worked at Palantir from May 2011 to January 2014, where I worked
-on improving scale and avoiding downtime. I also had internships at Mozilla and
-VMware.
+Previously, I was at Khan Academy, where I worked on the infrastructure team.
+Among other things, I worked on the A/B testing framework and the API, and
+helped build the first version of the Android app.
+
+Before that, I worked at Palantir, where I worked on improving scale (migrating
+from Oracle to a distributed database) and avoiding downtime (reworking the
+Reindex operation to work with the system up).
+
+I also had internships at Mozilla and VMware.
 
 I graduated from CMU in 2011 with a double major in computer science and math.
 I'm particularly proud of my [senior thesis](/files/senior_thesis.pdf),
