@@ -6,10 +6,10 @@ sharing: false
 footer: true
 ---
 
-I'm a software engineer at [Benchling](https://benchling.com/enterprise). I'm a
-full stack engineer, although these days, I mostly focus on frontend tech. But
-I have a wide range of other interests: CS theory, math, compilers, distributed
-systems, software engineering, Android, and lots of other things.
+I'm a full-stack software engineer at [Benchling](https://benchling.com/enterprise).
+These days, I mostly focus on frontend tech, but I have a wide range of other
+interests: CS theory, math, compilers, distributed systems, software engineering,
+Android, and lots of other things.
 
 Previously, I was at Khan Academy, where I worked on the infrastructure team.
 Among other things, I worked on the A/B testing framework and the API, and
