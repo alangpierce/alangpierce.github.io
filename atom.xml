@@ -4,7 +4,7 @@
   <title><![CDATA[Alan Pierce]]></title>
   <link href="http://www.alangpierce.com/atom.xml" rel="self"/>
   <link href="http://www.alangpierce.com/"/>
-  <updated>2018-01-07T09:37:57-08:00</updated>
+  <updated>2018-01-07T09:51:49-08:00</updated>
   <id>http://www.alangpierce.com/</id>
   <author>
     <name><![CDATA[Alan Pierce]]></name>
@@ -1821,14 +1821,39 @@ pipelines.</p>
 anything close to a relational database! It has a small set of primitives that&rsquo;s
 different from anything I&rsquo;ve worked with before:</p>
 
-<p>| Operation | Price |
-| &mdash;&mdash;&mdash; | &mdash;&ndash; |
-| Import CSV/JSON data into a table | Free
-| Run a SELECT query | 0.5 cents per GB in all columns touched
-| Store a query result as a new table | Free
-| Apppend query results to the end of a table | Free
-| Copy a table | Free
-<br /></p>
+<table>
+<thead>
+<tr>
+<th> Operation </th>
+<th> Price </th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td> Import CSV/JSON data into a table </td>
+<td> Free</td>
+</tr>
+<tr>
+<td> Run a SELECT query </td>
+<td> 0.5 cents per GB in all columns touched</td>
+</tr>
+<tr>
+<td> Store a query result as a new table </td>
+<td> Free</td>
+</tr>
+<tr>
+<td> Apppend query results to the end of a table </td>
+<td> Free</td>
+</tr>
+<tr>
+<td> Copy a table </td>
+<td> Free</td>
+</tr>
+</tbody>
+</table>
+
+
+<p><br /></p>
 
 <p>There are
 <a href="https://developers.google.com/bigquery/docs/reference/v2/">a few more operations</a>
