@@ -6,10 +6,10 @@ sharing: false
 footer: true
 ---
 
-I'm a developer with a wide range of interests: CS theory, math, compilers,
-distributed systems, software engineering, Android, React, and lots of other
-things. I'm typically a "backend" person in one way or another, although I've
-also done a fair amount of UI work.
+I'm a software engineer at [Benchling](https://benchling.com/enterprise). I'm a
+full stack engineer, although these days, I mostly focus on frontend tech. But
+I have a wide range of other interests: CS theory, math, compilers, distributed
+systems, software engineering, Android, and lots of other things.
 
 Previously, I was at Khan Academy, where I worked on the infrastructure team.
 Among other things, I worked on the A/B testing framework and the API, and
