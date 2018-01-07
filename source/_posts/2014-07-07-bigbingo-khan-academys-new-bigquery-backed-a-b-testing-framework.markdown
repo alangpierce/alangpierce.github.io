@@ -223,6 +223,7 @@ different from anything I've worked with before:
 | Store a query result as a new table | Free
 | Apppend query results to the end of a table | Free
 | Copy a table | Free
+
 <br />
 
 There are
