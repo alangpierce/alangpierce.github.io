@@ -4,7 +4,7 @@
   <title><![CDATA[Alan Pierce]]></title>
   <link href="http://www.alangpierce.com/atom.xml" rel="self"/>
   <link href="http://www.alangpierce.com/"/>
-  <updated>2016-03-18T13:52:58-07:00</updated>
+  <updated>2018-01-07T08:47:36-08:00</updated>
   <id>http://www.alangpierce.com/</id>
   <author>
     <name><![CDATA[Alan Pierce]]></name>
@@ -12,6 +12,708 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[From 200K Lines of CoffeeScript to Zero: Making Decaffeinate Super-stable]]></title>
+    <link href="http://www.alangpierce.com/blog/2018/01/06/from-200k-lines-of-coffeescript-to-zero-making-decaffeinate-super-stable/"/>
+    <updated>2018-01-06T07:45:36-08:00</updated>
+    <id>http://www.alangpierce.com/blog/2018/01/06/from-200k-lines-of-coffeescript-to-zero-making-decaffeinate-super-stable</id>
+    <content type="html"><![CDATA[<p><strong>This is a cross-post of a post of a post I made to the Benchling Engineering
+blog. <a href="https://benchling.engineering/from-200k-lines-of-coffeescript-to-zero-making-decaffeinate-super-stable-4de0ca68d9bc">See the original post.</a></strong></p>
+
+<p>The world of frontend development evolves so quickly that sometimes it feels
+impossible to keep up. Even worse, what do you do with your existing code when
+technologies shift? Innovations in languages, libraries, and practices are
+great, but they’re only useful if they can be used in practice. To enable new
+technologies, we need good modernization tools to aid in the transition process.</p>
+
+<p>At <a href="https://benchling.com/enterprise">Benchling</a>, we chose CoffeeScript in 2013,
+but about a year and a half ago, we recognized that the language was losing
+steam. The community and the tools were all moving to JavaScript, and with
+ES2015, JavaScript was getting much, much better. We made a decision: <strong>New code
+will be in JavaScript, and for now, the 200,000 lines of CoffeeScript will stay
+as-is. We’ll convert code over to JS as we find time for it.</strong> We wanted to be
+entirely on JavaScript, of course, but converting that much code seemed like a
+gigantic task.</p>
+
+<p>I took that as a challenge, and a year and a half later, I’m happy to say that
+that gigantic task is now complete. We’re finally at zero lines of CoffeeScript,
+all with minimal disruption to feature work. At the time, there weren’t good
+tools for such a big conversion, so I had to help build them. I started
+contributing to the <a href="https://github.com/decaffeinate/decaffeinate">decaffeinate</a>
+open source project, became the primary maintainer, and pushed it to completion.
+This post is about that long journey, and now that a tool like decaffeinate
+exists, it probably won’t take as long for you. 😄</p>
+
+<h2>Why switch to JavaScript?</h2>
+
+<p>At Benchling, we build tools to help biologists coordinate experiments, analyze
+and work with DNA, and more, and one of our strengths is our modern platform. We
+need to build and iterate quickly, so it’s important that we always have access
+to the latest and greatest tools. (<a href="http://grnh.se/wt7plq">We’re also hiring!</a>)</p>
+
+<p>We started with CoffeeScript in 2013, and that was the right choice at the time.
+The JavaScript language was at a standstill, and CoffeeScript overhauled it by
+introducing arrow functions, classes, destructuring, string templates, array
+spread, and lots of other cool features. It certainly had problems, like lack of
+standardization, surprises around variable scoping, and difficulty writing
+tooling, but it was the best there was.</p>
+
+<p>Over the next few years, JavaScript made a comeback. Inspired largely by many of
+the CoffeeScript features, the JavaScript committee released the ES2015 spec
+(a.k.a. ES6) that moved the language up to parity with CoffeeScript in some
+cases and beyond in other cases, and with Babel, it was possible to use modern
+JavaScript in any browser without waiting. The community became focused on
+JavaScript, so the tools got better. <a href="https://eslint.org/">ESLint</a> now has
+hundreds of rules and many competing popular default configurations,
+<a href="https://prettier.io/">Prettier</a> is a whole new class of formatter, and
+<a href="https://www.typescriptlang.org/">TypeScript</a> and <a href="https://flow.org/">Flow</a>
+allow advanced type checking while staying true to JS. Switching programming
+languages is never an easy choice, but it seemed like JavaScript was a safer
+long-term bet, and it’s easy to use the two side-by-side, so writing new code in
+JavaScript seemed reasonable.</p>
+
+<p>Having a split codebase is possible, but it ended up hurting productivity when
+working with older code. Switching back and forth between two languages is a
+pain, and two frontend languages meant more for new hires to learn and more
+trivial style rules to keep track of. And, of course, our new tools like ESLint
+couldn’t help when modifying old CoffeeScript code, where they probably would be
+most useful. A unified JavaScript codebase seemed like the right end goal.</p>
+
+<h2>First idea: convert the code by hand</h2>
+
+<p>One day in June 2016, a coworker decided to be ambitious: he was working with a
+complex 500-line React component, GuideGroupTable.coffee, and he was going to
+port it to ES6 first to make it easier to work with. Line-by-line, he carefully
+reworked the syntax and some of the logic until finally, GuideGroupTable.js was
+ready to try out. It broke the first time, and the second, but after fixing some
+little mistakes, things seemed to work, and he wrote some additional tests to
+gain more confidence in the conversion.</p>
+
+<p>Even with tests, and even with a thorough code review, making such a big change
+to complex code is risky, and it ended up introducing two bugs. In all,
+converting the code, getting it reviewed, and fixing the resulting bugs took
+about two engineer-days total. But at least there was a shiny new modern-looking
+GuideGroupTable.js. One file down, about 1000 more to go.</p>
+
+<p><strong>Math quiz:</strong> If every 500 lines of CoffeeScript converted takes 2 days and
+introduces 2 bugs, how many days and bugs is it for 200,000 lines?</p>
+
+<p><strong>Answer:</strong> 800 days (or 6,400 hours), 800 bugs.</p>
+
+<p>Spending over 3 engineer-years on switching programming languages would be a
+disastrous waste of time, especially for a startup; that’s time that could be
+spent working on real problems that scientists are facing. At the end of the
+day, <strong>cancer doesn’t care what programming language we use</strong>, and if sticking
+with CoffeeScript is the pragmatic choice, that’s what we’ll do.</p>
+
+<p>Maybe this was just a particularly difficult case and other code would be
+easier. Even if these estimates are too high by a factor of ten, 640 hours and
+80 bugs is still way too much to ask. If we’re going to move off of CoffeeScript
+at all, there needs to be a better way.</p>
+
+<h2>Second idea: the CoffeeScript compiler</h2>
+
+<p>In a certain sense, automatically converting CoffeeScript to JavaScript is
+trivial: just run it through the CoffeeScript compiler. The newest versions of
+CoffeeScript (which didn’t exist at the time) produce pretty good code, but
+<a href="http://coffeescript.org/#try:toolbarMouseOverHandler%20%3D%20%28fmt%29%20-%3E%0A%20%20%20%20attachFmts%20%3D%20%5B%0A%20%20%20%20%20%20%20%20%27table%27%2C%20%27day%27%2C%20%27attach%27%2C%20DATA_TABLE%2C%20DATA_TABLE_CONFIG%2C%0A%20%20%20%20%20%20%20%20REGISTRATION_TABLE%2C%20NOTE_LINKED_ASSAY_DATA%0A%20%20%20%20%5D%0A%20%20%20%20%7Bindex%2C%20subIndex%7D%20%3D%20%40state.selected%0A%20%20%20%20%0A%20%20%20%20if%20fmt%20in%20%5B%27left%27%2C%20%27center%27%2C%20%27right%27%2C%20%27important%27%5D%0A%20%20%20%20%20%20%20%20%40setState%20%7BhighlightIndex%3A%20index%7D%0A%20%20%20%20else%20if%20fmt%20%3D%3D%20%27delete%27%20and%20subIndex%20!%3D%20%27item%27%0A%20%20%20%20%20%20%20%20%40setState%20%7BhighlightIndex%3A%20index%7D%0A%20%20%20%20else%20if%20fmt%20in%20attachFmts%0A%20%20%20%20%20%20%20%20%40setState%20%7BinsertIndex%3A%20index%7D%0A%20%20%20%20return">there’s still quite a bit to be desired</a>:</p>
+
+<ul>
+<li>It reformats your code: it switches to two-space indentation, it deletes blank
+lines, it sometimes expands one-liners to multiple lines, and it sometimes joins
+multi-line expressions into one long line.</li>
+<li>It always uses <code>var</code> and declares all variables at the top of the file/function.</li>
+<li>It sometimes generates awkward code for the sake of strict correctness, like
+using <code>void 0</code> instead of <code>undefined</code> or <code>[].indexOf.call(array, x)</code> instead of
+<code>array.indexOf(x)</code>.
+If you’re still on CoffeeScript version 1, you’ll see more issues: that compiler
+also removes inline comments and doesn’t attempt to use newer JS features like
+classes and destructuring.</li>
+</ul>
+
+
+<p>In short, the CoffeeScript compiler is a good compiler, but not a great codebase
+conversion tool, so we decided to look for other approaches.</p>
+
+<h2>Third idea: decaffeinate</h2>
+
+<p>We weren’t the only company with this problem, and through some discussions, I
+heard about a tool called <a href="https://github.com/decaffeinate/decaffeinate">decaffeinate</a>
+that tried to solve this problem: it took
+in CoffeeScript and produced modern JavaScript, at least as much as it could.
+Unlike the CoffeeScript compiler, <a href="http://decaffeinate-project.org/repl/#?evaluate=true&amp;stage=full&amp;code=toolbarMouseOverHandler%20%3D%20%28fmt%29%20-%3E%0A%20%20%20%20attachFmts%20%3D%20%5B%0A%20%20%20%20%20%20%20%20%27table%27%2C%20%27day%27%2C%20%27attach%27%2C%20DATA_TABLE%2C%20DATA_TABLE_CONFIG%2C%0A%20%20%20%20%20%20%20%20REGISTRATION_TABLE%2C%20NOTE_LINKED_ASSAY_DATA%0A%20%20%20%20%5D%0A%20%20%20%20%7Bindex%2C%20subIndex%7D%20%3D%20%40state.selected%0A%20%20%20%20%0A%20%20%20%20if%20fmt%20in%20%5B%27left%27%2C%20%27center%27%2C%20%27right%27%2C%20%27important%27%5D%0A%20%20%20%20%20%20%20%20%40setState%20%7BhighlightIndex%3A%20index%7D%0A%20%20%20%20else%20if%20fmt%20%3D%3D%20%27delete%27%20and%20subIndex%20!%3D%20%27item%27%0A%20%20%20%20%20%20%20%20%40setState%20%7BhighlightIndex%3A%20index%7D%0A%20%20%20%20else%20if%20fmt%20in%20attachFmts%0A%20%20%20%20%20%20%20%20%40setState%20%7BinsertIndex%3A%20index%7D%0A%20%20%20%20return">it keeps your formatting and tries to use modern syntax and patterns</a>.</p>
+
+<p>I installed it and tried it out on our codebase. Out of 1200 files, it failed on
+about 600 of them. On the plus side, <strong>it successfully converted half of the
+files</strong>.</p>
+
+<p>It was promising, but it certainly wasn’t done. Lots of features were explicitly
+not supported: <code>?.</code>, <code>for own</code> loops, loops used as expressions, complex class
+bodies, and more. And most of the time, you’d get a confusing error like
+“Unexpected token” with no further context.</p>
+
+<p>I hadn’t made many GitHub contributions before, but it seemed like a reasonable
+place to start. I filed some bugs, improved some error reporting, learned the
+code better and better, and eventually, I was a regular contributor. For the
+last year or so, I’ve been the primary maintainer.</p>
+
+<p>If you want to try it out, the <a href="http://decaffeinate-project.org/repl/">REPL</a> is
+a nice interactive environment where you can type or paste some CoffeeScript and
+see what decaffeinate produces.</p>
+
+<h2>How does decaffeinate work?</h2>
+
+<p>Is decaffeinate a compiler? Maybe it’s a <em>trans</em>piler? (Is that really any
+different?) I’d say it’s neither; it’s something else entirely. It’s similar to
+a compiler, but it has different goals and, in this case, a different
+architecture.</p>
+
+<h3>The CoffeeScript compiler approach: code → AST → code</h3>
+
+<p>First, let’s see how the CoffeeScript compiler handles some example code:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class='coffee'><span class='line'><span class="k">if</span> <span class="nx">isHappy</span> <span class="k">then</span> <span class="nx">cheer</span><span class="p">()</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>First, it splits the code up into <strong>tokens</strong>: <code>IF</code>, <code>IDENTIFIER: isHappy</code>, <code>THEN</code>,
+<code>IDENTIFIER: cheer</code>, <code>CALL_START</code>, <code>CALL_END</code>, <code>TERMINATOR</code>.</p>
+
+<p>Then, it parses the tokens into an <strong>abstract syntax tree</strong> (AST):</p>
+
+<p><img src="http://www.alangpierce.com/images/coffee_ast.png" alt="CoffeeScript AST" /></p>
+
+<p>Each AST node then knows how to format itself into JavaScript code:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class='js'><span class='line'><span class="k">if</span> <span class="p">(</span><span class="nx">isHappy</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>  <span class="nx">cheer</span><span class="p">();</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Notice that the one-liner was expanded to multiple lines. CoffeeScript doesn’t
+take any formatting into account when producing output, since it throws away the
+code and only uses the AST when generating JavaScript.</p>
+
+<h3>The decaffeinate approach: targeted replacement</h3>
+
+<p>Many of the details in decaffeinate are similar, but it focuses on <em>editing your
+code, not rewriting it</em>. Rather than producing new code, it uses the AST and
+tokens to generate a list of changes to the code. In this case, decaffeinate
+uses the token positions to recognize that the <code>if</code> statement is a one-liner, then
+makes these changes:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Insert "(" before "isHappy"
+</span><span class='line'>Insert ")" after "isHappy"
+</span><span class='line'>Delete "then "
+</span><span class='line'>Insert "{ " before "cheer()"
+</span><span class='line'>Insert ";" after "cheer()"
+</span><span class='line'>Insert " }" after "cheer()"</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Those operations are then applied to the original code:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class='js'><span class='line'><span class="k">if</span> <span class="p">(</span><span class="nx">isHappy</span><span class="p">)</span> <span class="p">{</span> <span class="nx">cheer</span><span class="p">();</span> <span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Your code only changes where it needs to, and in most cases, the shape of the
+code is the same as before.</p>
+
+<p>Is this the right architecture? Frankly, it’s unclear, and projects like
+<a href="https://prettier.io/">Prettier</a> have made a compelling argument that codebases
+should simply have zero manual formatting anyway. But it’s the architecture
+decaffeinate went with.</p>
+
+<h2>Is it even possible?</h2>
+
+<p>When building an automatic translation from one programming language to another,
+you run into an uncomfortable possibility: <strong>the problem you’re solving might be
+impossible</strong>.</p>
+
+<p>Let’s take an example. Ideally, CoffeeScript classes can always be converted to
+JavaScript classes. Here’s one CoffeeScript class that uses a feature you may
+not have seen:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class='coffee'><span class='line'><span class="k">class</span> <span class="nx">Giraffe</span>
+</span><span class='line'>  <span class="k">if</span> <span class="nx">ENABLE_LOUD_GIRAFFES</span>
+</span><span class='line'>    <span class="nv">roar: </span><span class="nf">-&gt;</span>
+</span><span class='line'>      <span class="k">return</span> <span class="s">&#39;ROAR!!!&#39;</span>
+</span><span class='line'>  <span class="k">else</span>
+</span><span class='line'>    <span class="nv">roar: </span><span class="nf">-&gt;</span>
+</span><span class='line'>      <span class="k">return</span> <span class="s">&#39;roar...&#39;</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Yep, you can do that in CoffeeScript! Not only can you conditionally define
+methods, you can run arbitrary code at class setup time. JS classes can only
+consist of plain methods (for now), so there simply isn’t a way to do this. You
+can try, and you’ll get a syntax error:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+</pre></td><td class='code'><pre><code class='js'><span class='line'><span class="kr">class</span> <span class="nx">Giraffe</span> <span class="p">{</span>
+</span><span class='line'>  <span class="k">if</span> <span class="p">(</span><span class="nx">ENABLE_LOUD_GIRAFFES</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="nx">roar</span><span class="p">()</span> <span class="p">{</span>  <span class="c1">// &lt;- Unexpected token, expected ; (3:11)</span>
+</span><span class='line'>      <span class="k">return</span> <span class="s1">&#39;ROAR!!!&#39;</span><span class="p">;</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>  <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+</span><span class='line'>    <span class="nx">roar</span><span class="p">()</span> <span class="p">{</span>
+</span><span class='line'>      <span class="k">return</span> <span class="s1">&#39;roar...&#39;</span><span class="p">;</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>  <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>If you’re moving this code over manually, you’d think to yourself “I guess that
+trick doesn’t work in JavaScript, so I’ll rethink the code”, but that’s not
+possible with an automated tool.</p>
+
+<p>So how should a tool like decaffeinate approach this? There are a few options:</p>
+
+<ol>
+<li>Fall back to the CoffeeScript implementation. That’s not so unreasonable, but
+ideally CS classes would always become JS classes. It’s also not as easy as it
+sounds, given the different architectures.</li>
+<li>Throw an error, saying that this syntax isn’t supported. Anyone wanting to run
+decaffeinate on code like this needs to dumb down the code first.</li>
+<li>Find some trick to make it work anyway.</li>
+</ol>
+
+
+<p>#3 is where decaffeinate really shines: there are lots of little tricks to make
+the code look as good as possible while still being correct.</p>
+
+<h2>Case study: converting array comprehensions</h2>
+
+<p>Let’s take a look at some CoffeeScript code:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class='coffee'><span class='line'><span class="nv">colors = </span><span class="p">(</span><span class="nx">marker</span><span class="p">.</span><span class="nx">color</span> <span class="k">for</span> <span class="nx">marker</span> <span class="k">in</span> <span class="nx">getMarkers</span><span class="p">())</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Looks pretty clean (although you’ll get an <a href="http://coffeescript.org/#try:%23%20Creates%20an%20array%20called%20%60colors%60.%0Acolors%20%3D%20%28marker.color%20for%20marker%20in%20getMarkers%28%29%29%0A%0A%23%20Assigns%20to%20%60colors%60%20in%20each%20loop%20iteration.%0Acolors%20%3D%20marker.color%20for%20marker%20in%20getMarkers%28%29">unpleasant surprise</a> if you forget the
+parens). JavaScript doesn’t have array comprehensions, so we’ll need to find
+some alternative.</p>
+
+<p>Here’s how the CoffeeScript compiler handles it:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+</pre></td><td class='code'><pre><code class='js'><span class='line'><span class="kd">var</span> <span class="nx">colors</span><span class="p">,</span> <span class="nx">marker</span><span class="p">;</span>
+</span><span class='line'><span class="nx">colors</span> <span class="o">=</span> <span class="p">(</span><span class="kd">function</span><span class="p">()</span> <span class="p">{</span>
+</span><span class='line'>  <span class="kd">var</span> <span class="nx">i</span><span class="p">,</span> <span class="nx">len</span><span class="p">,</span> <span class="nx">ref</span><span class="p">,</span> <span class="nx">results</span><span class="p">;</span>
+</span><span class='line'>  <span class="nx">ref</span> <span class="o">=</span> <span class="nx">getMarkers</span><span class="p">();</span>
+</span><span class='line'>  <span class="nx">results</span> <span class="o">=</span> <span class="p">[];</span>
+</span><span class='line'>  <span class="k">for</span> <span class="p">(</span><span class="nx">i</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="nx">len</span> <span class="o">=</span> <span class="nx">ref</span><span class="p">.</span><span class="nx">length</span><span class="p">;</span> <span class="nx">i</span> <span class="o">&lt;</span> <span class="nx">len</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="nx">marker</span> <span class="o">=</span> <span class="nx">ref</span><span class="p">[</span><span class="nx">i</span><span class="p">];</span>
+</span><span class='line'>    <span class="nx">results</span><span class="p">.</span><span class="nx">push</span><span class="p">(</span><span class="nx">marker</span><span class="p">.</span><span class="nx">color</span><span class="p">);</span>
+</span><span class='line'>  <span class="p">}</span>
+</span><span class='line'>  <span class="k">return</span> <span class="nx">results</span><span class="p">;</span>
+</span><span class='line'><span class="p">})();</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Yuck. It works, but it certainly wouldn’t pass code review. Here’s what we
+really want:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class='js'><span class='line'><span class="kr">const</span> <span class="nx">colors</span> <span class="o">=</span> <span class="nx">getMarkers</span><span class="p">().</span><span class="nx">map</span><span class="p">((</span><span class="nx">marker</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="nx">marker</span><span class="p">.</span><span class="nx">color</span><span class="p">);</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Looks pretty clean, and not too different from the original code. But is it
+<em>correct</em>? It certainly looks right, but would you be willing to run this
+transformation (<code>a for b in c</code> to <code>c.map(b =&gt; a)</code>) on hundreds of thousands of lines
+of code? As it turns out, <strong>it’s not correct</strong>. If you want, you can stop reading
+and think about what goes wrong.</p>
+
+<p>I implemented this transformation, ran decaffeinate on a few thousand lines of
+code from work, did lots of testing, including existing automated tests, and it
+still ended up causing a crash in production.</p>
+
+<p>Here’s the old CoffeeScript:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class='coffee'><span class='line'><span class="nv">cids = </span><span class="p">(</span><span class="nx">$</span><span class="p">(</span><span class="nx">row</span><span class="p">).</span><span class="nx">attr</span><span class="p">(</span><span class="s">&#39;data-id&#39;</span><span class="p">)</span> <span class="k">for</span> <span class="nx">row</span> <span class="k">in</span> <span class="nx">$el</span><span class="p">.</span><span class="nx">find</span><span class="p">(</span><span class="s">&#39;.alignment-row&#39;</span><span class="p">))</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>And here’s the new JavaScript:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class='js'><span class='line'><span class="kd">let</span> <span class="nx">cids</span> <span class="o">=</span> <span class="nx">$el</span><span class="p">.</span><span class="nx">find</span><span class="p">(</span><span class="s1">&#39;.alignment-row&#39;</span><span class="p">).</span><span class="nx">map</span><span class="p">((</span><span class="nx">row</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="nx">$</span><span class="p">(</span><span class="nx">row</span><span class="p">).</span><span class="nx">attr</span><span class="p">(</span><span class="s1">&#39;data-id&#39;</span><span class="p">));</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The fundamental problem here is that <strong>you might not be working with an array</strong>. In
+this case, it was a jQuery collection, where <code>map</code> exists, but doesn’t produce an
+array.</p>
+
+<p>This problem is all over the place in CoffeeScript: every time you iterate
+through something in CoffeeScript, it needs to be array-like. That means you
+need <code>arr.length</code>, <code>arr[0]</code>, <code>arr[1]</code>, etc. When ES2015 came around, they decided to
+do things differently: they created the <em>iterable protocol</em>. Any object that wants
+to be iterable can expose a <code>Symbol.iterator</code> function that describes how to
+iterate through the object. That’s what JavaScript uses for iteration when you
+use <code>for (const rhino of rhinos)</code> or <code>children = [...children, baby]</code>. Arrays are
+both array-like and iterable, but plenty of JS objects are array-like but not
+iterable, and even more objects don’t have <code>map</code> (or have a <code>map</code> that works
+differently). Strings, jQuery collections, and FileList (but only in Safari) can
+all cause problems here.</p>
+
+<p>Fortunately, there’s a simple built-in function that converts array-like objects
+to true arrays: <code>Array.from</code>. To systematically avoid this problem, we can throw
+in <code>Array.from</code> anywhere we iterate over anything, and <a href="http://decaffeinate-project.org/repl/#?evaluate=true&amp;stage=full&amp;code=for%20rhino%20in%20rhinos%0A%20%20console.log%20rhino%0Achildren%20%3D%20%5Bchildren...%2C%20baby%5D%0Acids%20%3D%20%28%24%28row%29.attr%28%27data-id%27%29%20for%20row%20in%20%24el.find%28%27.alignment-row%27%29%29">this is what decaffeinate does</a>.</p>
+
+<p>This is one of the toughest design questions of decaffeinate: how important is
+correctness <em>really</em>? If a bug only comes up every few thousand lines of code, do
+we really want to defensively add <code>Array.from</code> on <em>all</em> iteration operators?</p>
+
+<p>After a lot of thinking, I decided that <strong>yes, <a href="https://github.com/decaffeinate/decaffeinate/blob/master/docs/correctness-issues.md">decaffeinate should be completely correct on all reasonable code</a></strong>. There’s a judgement call about what is
+“reasonable”, but decaffeinate needs to be trustworthy. decaffeinate’s goal is
+to speed up the conversion from CoffeeScript to JS, and if you need to
+extensively manually test your code after decaffeinate, it will take much, much
+longer. decaffeinate needs to be as stable as any compiler.</p>
+
+<p>If you use decaffeinate, you’ll probably see <code>Array.from</code> all over the place. You
+can disable it with the <code>--loose</code> option, but I’d recommend instead looking through
+the resulting code and only removing <code>Array.from</code> when you’re confident that the
+object you’re working with is already an array.</p>
+
+<h2>Reaching super-stability</h2>
+
+<p>Between July and December 2016, decaffeinate slowly got more and more stable
+when run on the Benchling code. 500 files failing, then 350, then 200, then 50,
+then 10, then 5, then 0. After some cheers and excitement, I ran the tests for
+the newly-decaffeinated codebase, and they crashed immediately. More work to do,
+I guess. I fixed a bug, I fixed another bug, I tracked down and <a href="https://github.com/eslint/eslint/pull/7811">fixed an ESLint bug</a>, I upgraded Babel to work around a Babel bug, I kept on iterating, and
+finally it got to a point of the tests passing.</p>
+
+<p>So now what? decaffeinate seemed to work great on the code that was covered by
+tests, but what about the code that wasn’t covered by tests? I could write
+100,000 lines of tests to try to get full code coverage, but that might take a
+while. I needed to find <em>more test cases for decaffeinate</em>, and fortunately, the
+internet has no shortage of CoffeeScript code. I set up a build system that
+would run decaffeinate on a bunch of projects, patch them to use Babel, then run
+all of the tests. A <a href="https://github.com/decaffeinate/decaffeinate#status">status board on the README</a> was also a good motivating factor
+and a good way to see progress. Here were some of the results early on:</p>
+
+<p><img src="http://www.alangpierce.com/images/decaffeinate_tests_before.png" alt="decaffeinate tests with many errors" /></p>
+
+<p>Testing out decaffeinate on codebases with a wide variety of authors and coding
+styles worked out great, and setting up the tests allowed me to discover the
+most critical bugs. There were <a href="https://github.com/decaffeinate/decaffeinate/issues/867">lots</a> <a href="https://github.com/decaffeinate/decaffeinate/issues/858">and</a> <a href="https://github.com/decaffeinate/decaffeinate/issues/878">lots</a> <a href="https://github.com/decaffeinate/decaffeinate/issues/902">of</a> <a href="https://github.com/decaffeinate/decaffeinate/issues/882">bugs</a>, but after a few months, I
+finally got everything working:</p>
+
+<p><img src="http://www.alangpierce.com/images/decaffeinate_tests_after.png" alt="decaffeinate tests, all passing" /></p>
+
+<p>It’s rare that you ever get to say that a software project is complete, but I
+think this is one of those times. Technically, there’s still a bit more that
+would be useful, and I did some follow-up work to add a suggestions system and
+clean up usage, but decaffeinate is now in maintenance mode.</p>
+
+<h2>Getting to zero</h2>
+
+<p>With decaffeinate stable, we were finally at a point where it wasn’t crazy to
+run it on large swaths of code without extensive testing or review. So what do
+you do when you have a tool like that and 150,000 lines of CoffeeScript to
+convert? Somehow, converting it all at once seemed a little worrying.</p>
+
+<p>Here’s the strategy we took: every Tuesday, we’d pick off a large chunk of code
+and run it through decaffeinate, first about 5000 lines, then larger and larger
+chunks, up to 20,000 lines at once. We always had a 100%-machine-automated set
+of commits, then two of us scanned through the converted code and made any safe
+cleanups we could find. That did not mean blindly removing all usages of
+<code>Array.from</code> or other decaffeinate artifacts; it meant fixing formatting, removing
+unused variables, renaming autogenerated variables to other names, etc. The code
+at the end wasn’t pristine, but it was JavaScript, and it was much better than
+what the CoffeeScript compiler gives.</p>
+
+<p>The stability work paid off, and after repeating this process for about 10
+weeks, we finally were able to get it completely to zero with very few issues.
+That also meant that it was possible to remove CoffeeScript from the build
+system, disable CoffeeLint, and delete our CoffeeScript style guide.</p>
+
+<p>In a sense, the job still isn’t done. We still have lots of files with
+decaffeinate artifacts and disabled lint rules that should eventually be
+manually cleaned up. One of our biggest auto-converted files starts with this:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+</pre></td><td class='code'><pre><code class='js'><span class='line'><span class="cm">/* eslint-disable</span>
+</span><span class='line'><span class="cm">    camelcase,</span>
+</span><span class='line'><span class="cm">    consistent-return,</span>
+</span><span class='line'><span class="cm">    default-case,</span>
+</span><span class='line'><span class="cm">    func-names,</span>
+</span><span class='line'><span class="cm">    new-cap,</span>
+</span><span class='line'><span class="cm">    no-case-declarations,</span>
+</span><span class='line'><span class="cm">    no-cond-assign,</span>
+</span><span class='line'><span class="cm">    no-multi-assign,</span>
+</span><span class='line'><span class="cm">    no-return-assign,</span>
+</span><span class='line'><span class="cm">    no-sequences,</span>
+</span><span class='line'><span class="cm">    no-shadow,</span>
+</span><span class='line'><span class="cm">    no-unused-vars,</span>
+</span><span class='line'><span class="cm">    no-use-before-define,</span>
+</span><span class='line'><span class="cm">    no-var,</span>
+</span><span class='line'><span class="cm">    one-var,</span>
+</span><span class='line'><span class="cm">    prefer-const,</span>
+</span><span class='line'><span class="cm">    prefer-rest-params,</span>
+</span><span class='line'><span class="cm">    react/no-is-mounted,</span>
+</span><span class='line'><span class="cm">    vars-on-top,</span>
+</span><span class='line'><span class="cm">*/</span>
+</span><span class='line'><span class="c1">// TODO: This file was created by bulk-decaffeinate.</span>
+</span><span class='line'><span class="c1">// Fix any style issues and re-enable lint.</span>
+</span><span class='line'><span class="cm">/*</span>
+</span><span class='line'><span class="cm"> * decaffeinate suggestions:</span>
+</span><span class='line'><span class="cm"> * DS101: Remove unnecessary use of Array.from</span>
+</span><span class='line'><span class="cm"> * DS102: Remove unnecessary code created because of implicit returns</span>
+</span><span class='line'><span class="cm"> * DS103: Rewrite code to no longer use __guard__</span>
+</span><span class='line'><span class="cm"> * DS104: Avoid inline assignments</span>
+</span><span class='line'><span class="cm"> * DS201: Simplify complex destructure assignments</span>
+</span><span class='line'><span class="cm"> * DS202: Simplify dynamic range loops</span>
+</span><span class='line'><span class="cm"> * DS204: Change includes calls to have a more natural evaluation order</span>
+</span><span class='line'><span class="cm"> * DS205: Consider reworking code to avoid use of IIFEs</span>
+</span><span class='line'><span class="cm"> * DS207: Consider shorter variations of null checks</span>
+</span><span class='line'><span class="cm"> * Full docs: https://github.com/decaffeinate/decaffeinate/blob/master/docs/suggestions.md</span>
+</span><span class='line'><span class="cm"> */</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>So it’s not perfect, but it’s pretty easy to do the remaining cleanup work as
+you go.</p>
+
+<p>Let’s compare my original estimate with the actual cost of converting 200,000
+lines of code:</p>
+
+<p><strong>Estimated cost without decaffeinate:</strong> 6,400 hours, 800 bugs.</p>
+
+<p><strong>Actual cost with decaffeinate:</strong> ~100 hours, ~5 bugs.</p>
+
+<p>(Not including the work on decaffeinate, which was in my spare time. 😄).</p>
+
+<p>Those 100 hours were mostly spent spot-checking and cleaning up the resulting
+JS, code reviewing those cleanups, manually testing the relevant features, and
+deploying the changes gradually to reduce risk. 2000 lines of code per hour
+seemed like a safe rate, but theoretically, it could have all been done at once,
+and if you’re in a hurry, you could probably go much faster.</p>
+
+<h2>What went wrong?</h2>
+
+<p>decaffeinate is extremely stable, but the conversion process still wasn’t
+without its bugs. By far, the largest source of bugs was <strong>human error</strong>. Let’s look
+at some code, before and after decaffeinate:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class='coffee'><span class='line'><span class="nv">_clearWorkspace: </span><span class="nf">(itemIdsToKeep = []) -&gt;</span>
+</span><span class='line'>  <span class="nx">@_closeAllFilesExcept</span> <span class="nf">(itemFileId) -&gt;</span> <span class="nx">itemFileId</span> <span class="k">in</span> <span class="nx">itemIdsToKeep</span>
+</span><span class='line'>  <span class="k">return</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class='js'><span class='line'><span class="nx">_clearWorkspace</span><span class="p">(</span><span class="nx">itemIdsToKeep</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>  <span class="k">if</span> <span class="p">(</span><span class="nx">itemIdsToKeep</span> <span class="o">==</span> <span class="kc">null</span><span class="p">)</span> <span class="p">{</span> <span class="nx">itemIdsToKeep</span> <span class="o">=</span> <span class="p">[];</span> <span class="p">}</span>
+</span><span class='line'>  <span class="k">this</span><span class="p">.</span><span class="nx">_closeAllFilesExcept</span><span class="p">(</span><span class="nx">itemFileId</span> <span class="o">=&gt;</span> <span class="nb">Array</span><span class="p">.</span><span class="nx">from</span><span class="p">(</span><span class="nx">itemIdsToKeep</span><span class="p">).</span><span class="nx">includes</span><span class="p">(</span><span class="nx">itemFileId</span><span class="p">));</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>decaffeinate moved the default param to an <code>if</code> statement <a href="https://github.com/decaffeinate/decaffeinate/blob/master/docs/suggestions.md#ds105-use-default-params-and-defaults-within-assignments-when-possible">in order to be
+technically correct</a>, wrapped <code>itemIdsToKeep</code> in <code>Array.from</code>, and changed the <code>in</code>
+operator to the <code>includes</code> method. The <code>if</code> statement and the <code>Array.from</code> could both
+use cleanup, and in this case we played it safe and only removed the <code>Array.from</code>,
+since it clearly seemed like an array:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class='js'><span class='line'><span class="nx">_clearWorkspace</span><span class="p">(</span><span class="nx">itemIdsToKeep</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>  <span class="k">if</span> <span class="p">(</span><span class="nx">itemIdsToKeep</span> <span class="o">==</span> <span class="kc">null</span><span class="p">)</span> <span class="p">{</span> <span class="nx">itemIdsToKeep</span> <span class="o">=</span> <span class="p">[];</span> <span class="p">}</span>
+</span><span class='line'>  <span class="k">this</span><span class="p">.</span><span class="nx">_closeAllFilesExcept</span><span class="p">(</span><span class="nx">itemFileId</span> <span class="o">=&gt;</span> <span class="nx">itemIdsToKeep</span><span class="p">.</span><span class="nx">includes</span><span class="p">(</span><span class="nx">itemFileId</span><span class="p">));</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>As it turns out, <code>itemIdsToKeep</code> was <strong>not</strong> always an array. Purely by mistake, it
+could sometimes be a <em>DOM event</em> instead. Both CoffeeScript and <code>Array.from</code>
+silently treat it as the empty array in that case, but removing <code>Array.from</code>
+exposed the crash.</p>
+
+<p>This is an example of a theme that occurred a number of times: <strong>decaffeinate
+tends to break on code that is already buggy</strong>.</p>
+
+<p>Let’s look at another example. Here’s some CoffeeScript before and JavaScript
+after:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class='coffee'><span class='line'><span class="nv">parse: </span><span class="nf">(response) -&gt;</span>
+</span><span class='line'>  <span class="nv">response.features = </span><span class="k">new</span> <span class="nx">selectables</span><span class="p">.</span><span class="nx">Collection</span><span class="p">(</span><span class="nx">response</span><span class="p">.</span><span class="nx">features</span><span class="p">)</span>
+</span><span class='line'>  <span class="k">return</span> <span class="nx">response</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class='js'><span class='line'><span class="nx">parse</span><span class="p">(</span><span class="nx">response</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>  <span class="nx">response</span><span class="p">.</span><span class="nx">features</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">selectables</span><span class="p">.</span><span class="nx">Collection</span><span class="p">(</span><span class="nx">response</span><span class="p">.</span><span class="nx">features</span><span class="p">);</span>
+</span><span class='line'>  <span class="k">return</span> <span class="nx">response</span><span class="p">;</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Seems pretty simple, right? What could go wrong?</p>
+
+<p>As it turns out, the problem wasn’t so much a conversion error as an unexpected
+consequence in switching compilers: <strong>switching from CoffeeScript to Babel enables
+strict mode</strong>. Without strict mode, assigning to a non-writable property is a
+no-op, and in strict mode it crashes. In this case, <code>response</code> was supposed to be
+an object, but instead was sometimes <em>the empty string</em>, which meant that the
+assignment simply did nothing. This was just a bug, but it was a benign bug
+before and switching to Babel made it a crashing bug.</p>
+
+<p>How can you avoid running into these same problems? Some ideas:</p>
+
+<ul>
+<li>Try to defer extensive manual cleanups until you’re working heavily with the
+code and are comfortable testing all of its edge cases. Over and over, we found
+that a cleanup that seemed safe actually had subtle flaws, and often times it
+was best to just go with the decaffeinate output.</li>
+<li>You may want to move to strict mode separately from moving to JS. One way to do
+this is with the <a href="https://github.com/genify/babel-plugin-transform-remove-strict-mode">babel-plugin-transform-remove-strict-mode</a> Babel plugin. That
+will keep you on the lookout for the types of errors that arise in strict mode.</li>
+</ul>
+
+
+<h2>Other things to know before using decaffeinate</h2>
+
+<p>Here are some more things to keep in mind:</p>
+
+<ul>
+<li><p>The hardest problem that decaffeinate had to solve is handling <code>this</code> before <code>super</code>
+in constructors, which is allowed in CS but not in JS. There’s a <a href="https://github.com/decaffeinate/decaffeinate/blob/master/docs/suggestions.md#ds001-remove-babeltypescript-constructor-workaround">hack</a> to trick
+Babel and TypeScript into allowing it, but it’s an ugly hack that you should
+remove ASAP after running decaffeinate.</p></li>
+<li><p>To help run decaffeinate along with other tools, I wrote a tool called
+<a href="https://github.com/decaffeinate/bulk-decaffeinate">bulk-decaffeinate</a> that runs decaffeinate, several jscodeshift transforms (e.g.
+converting code to JSX), <code>eslint --fix</code> and several other steps. You’ll probably
+want to either use that tool or one you write yourself, since decaffeinate is
+more of a building block.</p></li>
+<li><p>There have been some great previous blog posts on decaffeinate: <a href="https://blog.bugsnag.com/converting-a-large-react-codebase-from-coffeescript-to-es6/">Converting a large React Codebase from Coffeescript to ES6</a> and
+<a href="https://eng.datafox.com/javascript/2017/07/18/decaffeinating-large-coffeescript-codebase/">Decaffeinating a Large CoffeeScript Codebase Without Losing Sleep</a>.</p></li>
+<li><p>The decaffeinate docs have some pages to help you through the process: the
+<a href="https://github.com/decaffeinate/decaffeinate/blob/master/docs/conversion-guide.md">Conversion Guide</a> has some practical advice on running decaffeinate on a big
+codebase, and the Cleanup <a href="https://github.com/decaffeinate/decaffeinate/blob/master/docs/suggestions.md">Suggestions page</a> lists most of the subtleties you’ll
+see in the converted code. You can also drop in on <a href="https://gitter.im/decaffeinate/Lobby">Gitter</a> to ask questions!</p></li>
+</ul>
+
+
+<p>Every project and team is different, though, so regardless of how you approach
+it, you’ll likely need some real effort and care. But hopefully, once the
+conversion strategy, the configuration, and any other details are figured out,
+the gruntwork will all be safely handled by decaffeinate!</p>
+
+<h2>Migration tools let you focus on what’s important</h2>
+
+<p>Programming is full of tradeoffs, and a common pitfall is to focus too much on
+your code when you should be focusing on the real problem that you’re solving.
+Whether it’s formatting, variable names, code structure, or even what
+programming language to use, none of it matters if the product doesn’t actually
+help people. Big code migrations can sometimes feel necessary and benefit in the
+long run, but they can also be a big distraction and a massive time sink. It’s
+often an awkward tradeoff, but with solid migration tools like decaffeinate, you
+can get the best of both worlds: you can benefit from the latest tools and
+practices while still focusing your time and brainpower on solving real problems
+and helping people.</p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Adventures in Go: Accessing Unexported Functions]]></title>
